@@ -1,0 +1,27 @@
+cabal-version: 2.4
+name: class
+homepage: https://github.com/exordium/class#readme
+version: 0.1.0.0
+category: Exordium
+synopsis: Bool signature and compatible types / utils
+stability: cursed
+bug-reports: https://github.com/exordium/class/issues
+author: Dai
+maintainer: daig@sodality.cc
+copyright: 2018 Sodality
+license: MIT
+
+source-repository head
+  type: git
+  location: https://github.com/exordium/class
+
+common x
+  default-language: Haskell2010
+  default-extensions: DataKinds,NoImplicitPrelude,ViewPatterns,PatternSynonyms,RankNTypes,BlockArguments, KindSignatures, PolyKinds, QuantifiedConstraints, GADTs, MultiParamTypeClasses, FlexibleInstances, TupleSections, LambdaCase, ConstraintKinds, TypeFamilies, AllowAmbiguousTypes, TypeOperators, OverloadedLabels, ScopedTypeVariables, TypeApplications, BangPatterns
+
+library
+  import: x
+  hs-source-dirs: src
+  exposed-modules: List, Fun, Map,LMap,Postmap,Promap,Premap,Strong,Remap,Comap,Bimap
+  other-modules: TV, Class
+  build-depends: base, template-haskell, named, th-orphans, impl, ghc-prim

@@ -10,7 +10,7 @@ module Coerce where
   {-,module X) where-}
 import GHC.Types as X (Coercible)
 import qualified GHC.Prim as GHC (coerce)
-import Map
+import Remap
 
 import qualified Prelude as P
  
@@ -24,12 +24,12 @@ class    (forall a. f a =# g a) => Coercible1 f g
 instance (forall a. f a =# g a) => Coercible1 f g
 type (#=#) = Coercible1
 coerce1 :: forall g f a. f #=# g => f a -> g a
-coerce1 = GHC.coerce @(f a) @(g a)
+coerce1 = GHC.coerce
 
 -- | 'Representational' types. 
 class    ((forall a b. a =# b => f a =# f b),Coercemap f) => Representational f
 instance ((forall a b. a =# b => f a =# f b),Coercemap f) => Representational f
-representational :: (b =# a, Representational f) => f a -> f b
+representational :: forall b a f. (a =# b, Representational f) => f a -> f b
 {-# INLINE representational #-}
 representational = GHC.coerce
 
@@ -44,15 +44,4 @@ class Coercemap f where
   default coercemap :: (Representational f, a =# b) => (a -> b) -> f a -> f b
   coercemap _ = coerce
   {-# INLINE coercemap #-}
-  {-coercemap f !x = map f x-}
 instance {-# Overlappable #-} Remap f => Coercemap f where coercemap f !x = remap coerce f x
-
-{-newtype I = I P.Int-}
-{-data Foob a = Foob a-}
-{-{-type role Foob nominal-}-}
-
-{-impl @Map [t|Foob|] ! #map [|\f (Foob a) -> Foob (f a)|]-}
-{-instance Coercemap Foob-}
-
-{-xxx :: Foob P.Int -> Foob I-}
-{-xxx = coercemap I  -}

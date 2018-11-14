@@ -1,6 +1,6 @@
 {-# language TemplateHaskell #-}
 module Premap (Premap(..), module X) where
-import Impl as X
+import Impl as X hiding ((!))
 
 class Premap f where premap :: (b -> a) -> f a x -> f b x
 

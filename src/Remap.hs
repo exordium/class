@@ -1,6 +1,6 @@
 {-# language TemplateHaskell #-}
 module Remap (Remap(..), module X) where
-import Impl as X
+import Impl as X hiding ((!))
 
 class Remap f where remap :: (b -> a) -> (a -> b) -> f a -> f b
 

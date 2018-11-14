@@ -1,6 +1,6 @@
 {-# language TemplateHaskell #-}
 module LMap (LMap(..), module X) where
-import Impl as X
+import Impl as X hiding ((!))
 
 class LMap f where lmap :: (a -> b) -> f a x -> f b x
 

@@ -10,7 +10,7 @@ module Coerce where
   {-,module X) where-}
 import GHC.Types as X (Coercible)
 import qualified GHC.Prim as GHC (coerce)
-import Remap
+import {-# source #-} Coercemap
 
 import qualified Prelude as P
  
@@ -39,9 +39,3 @@ instance ((forall x y. f x =# f y)) => Phantom f
 phantom :: forall b a f. Phantom f => f a -> f b
 phantom = GHC.coerce @(f a) @(f b); {-# INLINE phantom #-}
 
-class Coercemap f where
-  coercemap :: a =# b => (a -> b) -> f a -> f b
-  default coercemap :: (Representational f, a =# b) => (a -> b) -> f a -> f b
-  coercemap _ = coerce
-  {-# INLINE coercemap #-}
-instance {-# Overlappable #-} Remap f => Coercemap f where coercemap f !x = remap coerce f x

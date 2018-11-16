@@ -17,3 +17,5 @@ instance Impl Promap where
     instance Strong ($p [tv|x|]) where strong a = map ((,) a)
     instance Remap  ($p [tv|x|]) where remap _  = map
    |]
+
+instance Promap (->) where promap = \f g p a -> g (p (f a))

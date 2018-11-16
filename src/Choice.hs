@@ -13,5 +13,4 @@ class Promap p => Choice p where
   _L :: p a b -> p (E a y) (E b y)
   _L = \p -> promap E.swap E.swap (_R p)
 
-impl @Promap [t|(->)|]           ! #promap [|\f g p a -> g (p (f a))|]
 instance Choice (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}

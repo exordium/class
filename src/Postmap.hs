@@ -15,3 +15,5 @@ instance Impl Postmap where
     instance Strong ($p [tv|x|]) where strong a = $postmap ((,) a)
     instance Remap  ($p [tv|x|]) where remap _  = $postmap
    |]
+
+instance Postmap (->) where postmap = map

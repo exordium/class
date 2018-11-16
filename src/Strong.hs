@@ -1,5 +1,7 @@
 {-# language TemplateHaskell #-}
 module Strong (Strong(..),module X) where
+import qualified Prelude as P
+import E
 import Remap  as X
 
 class Remap f => Strong f where
@@ -17,3 +19,7 @@ instance Impl Strong where
     instance Remap  $f where remap  = $remap
     instance Strong $f where strong = $strong
    |]
+
+instance Strong [] where strong a = P.map (a,)
+instance Strong ((->) x) where strong x g = \a -> (x,g a)
+instance Strong (E x) where strong x = \case {L x -> L x; R a -> R (x,a)}

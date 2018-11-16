@@ -14,7 +14,7 @@ instance Map (Baz c t b) where map xy (Baz xfbft) = Baz (\yfb -> xfbft (\x -> yf
 instance Remap (Baz c t b) where remap _ = map
 instance Strong (Baz c t b) where strong x (Baz afbft) = Baz (\xafb -> afbft (\a -> xafb (x,a)))
 
-pattern Baz f = Baz_ (Bazaar f)
+pattern Baz f = Baz_ (Bazaar f); {-# complete Baz #-}
 runBaz (Baz f) = f
 
 sold :: forall c t a. c I => Baz c t a a -> t

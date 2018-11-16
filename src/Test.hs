@@ -6,16 +6,20 @@
 {-# language UndecidableInstances #-}
 module Test where
 import qualified Prelude as P
-import Coerce
-import Coerce.Map
+import Data.Coerce
+{-import Coerce-}
 import Map
+import E
+import Traverse
+import Data.Proxy
+import Pure
+import Distribute
 
-newtype I = I P.Int
-data Foob a = Foob a
-{-type role Foob nominal-}
-{-instance Container Foob-}
 
-impl @Map [t|Foob|] ! #map [|\f (Foob x) -> Foob (f x)|]
+{-instance Pure' []-}
+{-pp = pure' -}
 
-ff :: Foob P.Int -> Foob I
-ff = coercemap I
+
+{-q = pp 3 :: [P.Int]-}
+
+{-instance f ~ ((->) x) => IsReader f-}

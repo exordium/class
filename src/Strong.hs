@@ -25,3 +25,4 @@ instance Strong [] where strong a = P.map (a,)
 instance Strong ((->) x) where strong x g = \a -> (x,g a)
 instance Strong (E x) where strong x = \case {L x -> L x; R a -> R (x,a)}
 instance Strong I where strong x (I a) = I (x,a)
+instance Strong ((,) x) where strong y (x,a) = (x,(y,a))

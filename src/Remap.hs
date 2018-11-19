@@ -18,5 +18,6 @@ instance Remap [] where remap _ = P.map
 instance Remap ((->) x) where remap _ f g = \a ->  f (g a)
 instance Remap (E x) where remap _ f = \case {L x -> L x; R a -> R (f a)}
 instance Remap I where remap _ f (I a) = I (f a)
+instance Remap ((,) x) where remap _ f (x,a) = (x, f a)
 
 instance {-# Overlappable #-} Remap f => Coercemap f where coercemap f !x = remap coerce f x

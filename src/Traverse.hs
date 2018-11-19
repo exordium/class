@@ -25,40 +25,36 @@ import Types
 
 import Coerce
 
-class Either' f  where rep :: Proxy f
-instance f ~ E x => Either' f
-
-type Either x = ((~) (E x))
-
-impl @Map    [t|((,) [tv|a|])|]  ! #map    [|\f (a,b) -> (a, f b)|]
-
-class Map t => Traverse c t | t -> c where
+class (Map t) => Traverse c t where
   traverse :: c f => (a -> f b) -> t a -> f (t b)
-  traverse afb ta = sequence (map afb ta)
+  traverse afb ta = sequence @c (map afb ta)
   sequence :: c f => t (f a) -> f (t a)
-  sequence = traverse \ x -> x
+  sequence = traverse @c \ x -> x
 
-cocollect :: forall c f t a b. (Traverse c t, forall ff. c ff => Map ff, c f)
+cocollect :: forall c f t a b. (Traverse c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
 
 {-instance (c (Baz c t b), forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa)))) => Traverse c (Baz c t b) where-}
 
-class Promap p => Traversed (c :: (* -> *) -> Constraint) p | p -> c where
+class Promap p => Traversed (c :: (* -> *) -> Constraint) p where
   traversal :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
-  default traversal :: (forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa))), c I, c (Baz c t b)) => (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
-  traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed pab)
+  default traversal :: (forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa)))
+                       ,c I , c (Baz c t b))
+                    => (forall f. c f => (a -> f b) -> s -> f t)
+                    -> p a b -> p s t
+  traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed @c pab)
   traversed :: Traverse c t => p a b -> p (t a) (t b)
   traversed = traversal @c (traverse @c)
 
 _2 :: Traversed Map p => p a b -> p (x,a) (x,b)
-_2 = traversed
+_2 = traversed @Map
 _1 :: Traversed Map p => p a b -> p (a,x) (b,x)
 _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
 lens :: Traversed Map p => (s -> a) -> (s -> b -> t) -> p a b -> p s t
-lens get set = traversal \ afb s -> set s `map` afb (get s)
+lens get set = traversal @Map \ afb s -> set s `map` afb (get s)
 
 lens0 :: (Choice p, Traversed Map p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
@@ -73,7 +69,7 @@ class Promap p => Closed p where
 
 
 
-instance Traverse Map ((,) x) where traverse f (x,a) = map (x,) (f a)
+instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x) where traverse f (x,a) = map (x,) (f a)
 
 instance Traverse Applicative [] where
   traverse f = go where
@@ -84,7 +80,7 @@ instance Traverse Applicative [] where
 
 
 
-instance Traversed Map (->) where traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
+instance (c ==> Map, c I) => Traversed c (->) where traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
 {-instance Traversed Pure (->) where traversal l f s = case l (\a -> I (f a)) s of {I t -> t} -}
 
 

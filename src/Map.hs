@@ -3,6 +3,7 @@ module Map (Map(..), module X) where
 import E
 import qualified Prelude as P
 import Strong as X
+import I
 
 class Strong f => Map f where
   map :: (a -> b) -> f a -> f b
@@ -20,3 +21,4 @@ instance Impl Map where
 instance Map ((->) x) where map f g = \a ->  f (g a)
 instance Map [] where map = P.map
 instance Map (E x) where map f = \case {L x -> L x; R a -> R (f a)}
+instance Map I where map f (I a) = I (f a)

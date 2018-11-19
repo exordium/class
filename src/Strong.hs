@@ -3,6 +3,7 @@ module Strong (Strong(..),module X) where
 import qualified Prelude as P
 import E
 import Remap  as X
+import I
 
 class Remap f => Strong f where
   {-# minimal strong | strengthen #-}
@@ -23,3 +24,4 @@ instance Impl Strong where
 instance Strong [] where strong a = P.map (a,)
 instance Strong ((->) x) where strong x g = \a -> (x,g a)
 instance Strong (E x) where strong x = \case {L x -> L x; R a -> R (x,a)}
+instance Strong I where strong x (I a) = I (x,a)

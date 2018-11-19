@@ -1,10 +1,10 @@
 {-# language UndecidableInstances #-}
 {-# language InstanceSigs #-}
 module Distribute
-  ( Distribute(..), distribute
-  , zipWithF_, zipWithF
-  , collect_, collect
-  ) where
+  {-( Distribute(..), distribute-}
+  {-, zipWithF_, zipWithF-}
+  {-, collect_, collect-}
+   where
 import Map
 import Coerce
 import I
@@ -14,53 +14,32 @@ import Impl
 import Coercemap
 import E
 import IsEither
+import K
+import Def
+
 
 {-impl @Map    [t|[]|]             ! #map    [|P.map|]-}
 
-class (Map t) => Distribute t where
-  type C t :: (* -> *) -> Constraint
-  {-distribute_' :: (forall ff. cc ff => c ff, cc f) => f (t a) -> t (f a)-}
-  distribute_ :: (cc ==> C t, C t f, cc f) => f (t a) -> t (f a)
-  {-distribute_ = zipWithF @t @(C t) \ x -> x-}
+class (c ==> Map, Map t) => Distribute c t where
+  distribute :: c f => f (t a) -> t (f a)
+  distribute = collect @c \ x -> x
+  zipWithF   :: c f => (f a -> b) -> f (t a) -> t b
+  zipWithF fab = \fta -> map fab (distribute @c fta)
+  collect :: c f => (a -> t b) -> f a -> t (f b)
+  collect f a = zipWithF @c (\x -> x) (map f a)
 
 
-distribute :: forall t f a. (Distribute t, C t f) => f (t a) -> t (f a)
-distribute = distribute_ @t @(C t)
+instance (c ==> Map, Map ((->) x)) => Distribute c ((->) x) where distribute fxa = \x -> map (\xa -> xa x) fxa
 
-zipWithF_ :: forall cc t f a b. (Distribute t,  cc ==> C t , C t f, cc f)
-         => (f a -> b) -> f (t a) -> t b
-zipWithF_ fab = \fta -> map fab (distribute_ @t @(C t) fta)
+instance (c ==> Map, Map I) => Distribute c I where distribute (fia :: f (I a)) = I (coercemap unI fia)
 
-zipWithF :: forall t f a b. (Distribute t,  C t f)
-         => (f a -> b) -> f (t a) -> t b
-zipWithF fab = \fta -> map fab (distribute_ @t @(C t) fta)
+instance Distribute IsEither [] where
+  distribute = \case {L x -> [L x]; R ts -> map R ts}
+  zipWithF fab = \case
+    L x -> [fab (L x)]
+    R ta -> map (\a -> fab (R a)) ta
+  collect atb = \case
+    L x -> [L x]
+    R a -> map R (atb a)
 
-collect_ :: forall cc t f a b. (Distribute t,  (forall ff. cc ff => (C t ff, Map ff))  , C t f, cc f)
-        => (a -> t b) -> f a -> t (f b)
-collect_ f a = distribute_ @t @(C t) (map f a)
-
-collect :: forall t f a b. (Distribute t, C t f, Map f)
-        => (a -> t b) -> f a -> t (f b)
-collect f a = distribute_ @t @(C t) (map f a)
-{-collect f a = distribute_ @t @(C t) (map f a)-}
-
-
-instance Distribute ((->) x) where
-  type C ((->) x) = Map
-  distribute_ fxa = \x -> map (\xa -> xa x) fxa
-  {-zipWithF :: (cc ==> Map , Map f, cc f) => (f a -> b) -> f (x -> a) -> x -> b-}
-  {-zipWithF = P.undefined-}
-
-
-instance Distribute I where
-  type C I = Coercemap
-  {-distribute_ :: forall c f a.  (c ==> Remap, c f) => f (I a) -> I (f a)-}
-  distribute_ (fia :: f (I a)) = I (coercemap unI fia)
-
-instance Distribute [] where
-  type C [] = IsEither
-  {-distribute_ :: (c ==> IsEither, IsEither t => t [a] -> [t a]-}
-  distribute_ = \case {L x -> [L x]; R ts -> map R ts}
-
-{-distribute :: forall t f a. (Distribute t, C t f) => f (t a) -> t (f a)-}
-{-distribute = distribute_ @t @(C t)-}
+instance (c ==> Map, Def a, Map (K a)) => Distribute c (K a) where distribute _ = K def

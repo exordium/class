@@ -3,46 +3,39 @@
 {-# language EmptyCase #-}
 module Pure where
 import E
-import Distribute
 import Impl
 import Map
 import Types
 import IsEither
 import qualified Prelude as P
 import K
-import Traverse
+import Fun hiding ((!))
+import Add
+import Mul
+import I
 
 
-class Distribute IsEither t => Pure t where
-  pure :: a -> t a
-  default pure :: a -> t a
-  pure = \(a :: a) -> map (\case L a -> a) (distribute @IsEither (L a))
-  {-pure a = map (\case L a -> a) (collect (\case{}) (L a))-}
+-- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
+class (Lifting Zero One f, Remap f) => Pure f where
+  fone :: f ()
+  fone = pure ()
+  pure :: a -> f a
+  pure a = remap (\_ -> ()) (\_ -> a) fone
 
+-- |A @Pure f@ distributes through Sum types:
+--  http://r6research.livejournal.com/28338.html
+instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero
+
+pure_distribute :: (Map t, Pure t) => E x (t a) -> t (E x a)
+pure_distribute = (pure < L) ||| map R
 
 instance Impl Pure where
-  type Methods Pure = '["map", "pure"]
-  impl f (Arg map) (Arg pure) = [d|
-    instance Pure   $f where pure = $pure
-    instance Map    $f where map      = $map
-    instance Strong $f where strong a = $map ((,) a)
-    instance Remap  $f where remap _  = $map
+  type Methods Pure = '["remap", "pure"]
+  impl f (arg #remap -> r) (arg #pure -> p) = [d|
+    instance Pure   $f where pure = $p
+    instance Remap  $f where remap _  = $r
    |]
 
-{-distribute = distribute_ @t @(C t)-}
-  
-instance Pure []
-instance Pure ((->) x) where 
+instance Pure [] where pure a = [a]
+instance Zero a => Pure (K a) where pure _ = K zero
 
-instance Pure (K ())
-
-data Stream a = Stream {head :: a , tail :: Stream a}
-instance P.Show a => P.Show (Stream a) where
-  show s = P.show (head s) P.++ " : " P.++ P.show (tail s)
-from n = Stream n (from (n P.+ 10))
-
-impl @Map [t|Stream|] ! #map [|\f (Stream a as) -> Stream (f a) (map f as)|]
-instance (c ==> Map, Map Stream) => Distribute c Stream where
-  distribute = go where go fas = Stream (map head fas) (go (map tail fas))
-
-instance Pure Stream

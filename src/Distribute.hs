@@ -16,6 +16,8 @@ import E
 import IsEither
 import K
 import Def
+import X
+import Fun hiding ((!))
 
 
 {-impl @Map    [t|[]|]             ! #map    [|P.map|]-}
@@ -43,3 +45,6 @@ instance Distribute IsEither [] where
     R a -> map R (atb a)
 
 instance (c ==> Map, Def a, Map (K a)) => Distribute c (K a) where distribute _ = K def
+
+distribute_pure :: Distribute IsEither t => a -> t a
+distribute_pure a = (id ||| absurd) `map` distribute @IsEither (L a)

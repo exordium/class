@@ -13,6 +13,7 @@ import Named.Internal as X (Param(..),Decide)
 import qualified Named
 import qualified Named.Internal as Named
 import Church
+import E
 
 
 data Foob a b = Foob a b | Foo a | B b
@@ -101,11 +102,11 @@ foo i (arg #bar -> b) (arg' #foo -> f) = do
   print b
   print $ fromMaybe "" f
 
-f = foo
-  !3
-  {-{-!! #bar(10)-}-}
-  !! #foo("wow")
-  !. 10
+{-f = foo-}
+  {-!3-}
+  {-{-{-!! #bar(10)-}-}-}
+  {-!! #foo("wow")-}
+  {-!. 10-}
 
 {-f %3-}
   {-%5-}
@@ -141,3 +142,16 @@ f = foo
 {-(?) 2 -}
 
 ff = (P.* (2::Int)) %(10::Integer)  
+
+(|||) :: (a -> r) -> (b -> r) -> E a b -> r
+f ||| g = \case {L a -> f a; R b -> g b}
+(+++) :: (x -> a) -> (y -> b) -> E x y -> E a b
+f +++ g = (L < f) ||| (R < g)
+
+(&&&) :: (x -> a) -> (x -> b) -> x -> (a,b)
+f &&& g = \x -> (f x, g x)
+(***) :: (x -> a) -> (y -> b) -> (x,y) -> (a,b)
+f *** g = \(x,y) -> (f x, g y)
+
+id :: a -> a
+id a = a

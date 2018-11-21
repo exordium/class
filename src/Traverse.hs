@@ -71,7 +71,7 @@ class Promap p => Closed p where
 
 instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x) where traverse f (x,a) = map (x,) (f a)
 
-instance Traverse Applicative [] where
+instance (c ==> Applicative) => Traverse c [] where
   traverse f = go where
     go = \case
       [] -> pure []
@@ -81,16 +81,15 @@ instance Traverse Applicative [] where
 
 
 instance (c ==> Map, c I) => Traversed c (->) where traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
-{-instance Traversed Pure (->) where traversal l f s = case l (\a -> I (f a)) s of {I t -> t} -}
 
-
-
-{-instance  Traverse (Baz c t b) where-}
-  {-type TraverseC (Baz c t b) = c-}
+{-instance  Traverse c (Baz c t b) where-}
   {-traverse f (Baz bz) = map (\(Bazaar m) -> Baz m) ((\(O fg) -> fg) (bz (\x -> O (map (sell @Map) (f x)))))-}
 
 
 
-instance (c (Baz c t b), forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa)))) => Traverse c (Baz c t b) where
-  traverse f (Baz bz) = map Baz_ (unO (bz (\x -> O (map (sell @c) (f x)))))
+instance (c ==> Map
+         ,Map (Baz c t b)
+         ,forall f b a. c f => c (O f (Bazaar c b a)))
+  => Traverse c (Baz c t b) where
+     traverse f (Baz bz) = map Baz_ (unO (bz (\x -> O (map (sell @c) (f x)))))
 

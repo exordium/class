@@ -38,20 +38,6 @@ class Remap f => Strong f where
   fill :: a -> f () -> f a
   fill = strengthen (\a -> a) (\_ -> ()) (\a _ -> a)
 
-{-instance Impl Strong where-}
-  {-type Methods Strong = '["remap", "strong"]-}
-  {-impl f (Arg remap) (Arg strong) = [d|-}
-    {-instance Remap  $f where remap  = $remap-}
-    {-instance Strong $f where strong = $strong-}
-   {-|]-}
-
-instance Strong [] where strong a = P.map (a,)
-instance Strong ((->) x) where strong x g = \a -> (x,g a)
-instance Strong (E x) where strong x = \case {L x -> L x; R a -> R (x,a)}
-instance Strong I where strong x (I a) = I (x,a)
-instance Strong ((,) x) where strong y (x,a) = (x,(y,a))
-instance Strong P.IO where strong a = P.fmap (a,)
-
 -- * Coercemap
 class Coercemap f where
   coercemap :: a =# b => (a -> b) -> f a -> f b
@@ -59,56 +45,17 @@ class Coercemap f where
   coercemap _ = coerce
   {-# INLINE coercemap #-}
 
--- * Postmap
-class (forall x. Map (f x)) => Postmap f where
-  postmap :: (a -> b) -> f x a -> f x b
-
-{-instance Impl Postmap where-}
-  {-type Methods Postmap = '["postmap"]-}
-  {-impl p (Arg postmap) = [d|-}
-    {-instance Postmap $p where postmap  = $postmap-}
-    {-instance Map    ($p [tv|x|]) where map      = $postmap-}
-    {-instance Strong ($p [tv|x|]) where strong a = $postmap ((,) a)-}
-    {-instance Remap  ($p [tv|x|]) where remap _  = $postmap-}
-   {-|]-}
-
-instance Postmap (->) where postmap = map
-
--- * Premap
-class Premap f where premap :: (b -> a) -> f a x -> f b x
-
-{-instance Impl Premap where-}
-  {-type Methods Premap = '["premap"]-}
-  {-impl p (Arg premap) = [d|instance Premap $p where premap  = $premap|]-}
-
-instance Premap (->) where premap = \f p a -> p (f a)
-
--- * Coercepromap
+-- * Promap
+class (forall x. Map (f x)) => Postmap f
+  where postmap :: (b -> t) -> f x b -> f x t
+class Premap f where premap :: (s -> a) -> f a x -> f s x
 class Coercepromap p where
   coercepromap :: (s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
   default coercepromap :: (Representational1 p, s =# a, b =# t)
                        => (s -> a) -> (b -> t) -> p a b -> p s t
   coercepromap _ _ = coerce
-
-
--- * Promap
-class (Premap p, Postmap p, Coercepromap p) => Promap p where promap :: (s -> a) -> (b -> t) -> p a b -> p s t
-
-{-instance Impl Promap where-}
-  {-type Methods Promap = '["promap"]-}
-  {-impl p (Arg promap) = [d|-}
-    {-instance Promap  $p where promap   = $promap-}
-    {-instance Premap  $p where premap f = $promap f \ x -> x-}
-    {-instance Postmap $p where postmap  = $promap \ x -> x-}
-    {-instance Map    ($p [tv|x|]) where map      = postmap-}
-    {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
-    {-instance Remap  ($p [tv|x|]) where remap _  = map-}
-   {-|]-}
-
-instance Promap (->) where promap = \f g p a -> g (p (f a))
-
-instance {-# Overlappable #-} Promap p => Coercepromap p where
-  coercepromap _ _ !p = promap coerce coerce p
+class (Premap p, Postmap p, Coercepromap p) => Promap p
+  where promap :: (s -> a) -> (b -> t) -> p a b -> p s t
 
 -- * Closed
 class Promap p => Closed p where
@@ -120,20 +67,6 @@ class Promap p => Closed p where
   grate sa_b_t = \ab -> promap (\a g -> g a) sa_b_t (distributed ab)
   zipping :: (forall f. Map f => (f a -> b) -> f s -> t) -> p a b -> p s t
   zipping sabsst = grate (`sabsst` \ s -> s)
-
-instance Closed (->) where
-  distributed = map
-  closed f = (f <)
-
--- * IsEither
-type family LeftF t where LeftF (E a) = a
-class (Map f, f ~ E (LeftF f)) => IsEither f
-instance IsEither (E a)
-
-type family Left t where Left (E a b) = a
-type family Right t where Right (E a b) = b
-class a ~ E (Left a) (Right a) => IsEither' a
-instance a ~ E (Left a) (Right a) => IsEither' a
 
 -- * Apply
 class Map f => Apply f where ap :: f (a -> b) -> f a -> f b
@@ -150,28 +83,6 @@ class (c ==> Map, Map t) => Distribute c t where
   collect :: c f => (a -> t b) -> f a -> t (f b)
   collect f a = zipWithF @c (\x -> x) (map f a)
 
-
-instance (c ==> Map, Map ((->) x)) => Distribute c ((->) x) where distribute fxa = \x -> map (\xa -> xa x) fxa
-
-instance (c ==> Map, Map I) => Distribute c I where distribute (fia :: f (I a)) = I (coercemap unI fia)
-
-instance Distribute IsEither [] where
-  distribute = \case {L x -> [L x]; R ts -> map R ts}
-  zipWithF fab = \case
-    L x -> [fab (L x)]
-    R ta -> map (\a -> fab (R a)) ta
-  collect atb = \case
-    L x -> [L x]
-    R a -> map R (atb a)
-instance Distribute IsEither (E x) where
-  distribute = \case
-    L y -> R (L y)
-    R (L x) -> L x
-    R (R a) -> R (R a)
-
-
-instance (c ==> Map, Def a, Map (K a)) => Distribute c (K a) where distribute _ = K def
-
 distribute_pure :: Distribute IsEither t => a -> t a
 distribute_pure a = (id ||| absurd) `map` distribute @IsEither (L a)
 -- * Pure
@@ -182,23 +93,8 @@ class (Lifting Zero One f, Remap f) => Pure f where
   pure :: a -> f a
   pure a = remap (\_ -> ()) (\_ -> a) fone
 
--- |A @Pure f@ distributes through Sum types:
---  http://r6research.livejournal.com/28338.html
-instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero
-
 pure_distribute :: (Map t, Pure t) => E x (t a) -> t (E x a)
 pure_distribute = (pure < L) ||| map R
-
-instance Impl Pure where
-  type Methods Pure = '["remap", "pure"]
-  impl f (arg #remap -> r) (arg #pure -> p) = [d|
-    instance Pure   $f where pure = $p
-    instance Remap  $f where remap _  = $r
-   |]
-
-instance Pure [] where pure a = [a]
-instance Zero a => Pure (K a) where pure _ = K zero
-instance Pure (E x) where pure = R
 
 -- * Traverse
 class Map t => Traverse c t where
@@ -208,63 +104,42 @@ class Map t => Traverse c t where
   sequence = traverse @c \ x -> x
 
 --- 
-class (Strong f) => Map f where
+class (Traverse ((~) I) f, Strong f) => Map f where
   map :: (a -> b) -> f a -> f b
   constMap :: b -> f a -> f b
   constMap b = map \ _ -> b
 
-{-instance Impl Map where-}
-  {-type Methods Map = '["map"]-}
-  {-impl f (Arg map) = [d|-}
-    {-instance Map    $f where map      = $map-}
-    {-instance Strong $f where strong a = $map ((,) a)-}
-    {-instance Remap  $f where remap _  = $map-}
-   {-|]-}
-
-instance Map ((->) x) where map f g = \a ->  f (g a)
-instance Map [] where map = P.map
-instance Map (E x) where map f = \case {L x -> L x; R a -> R (f a)}
-instance Map I where map f (I a) = I (f a)
-instance Map ((,) x) where map f (x,a) = (x, f a)
-instance Map P.IO where map = P.fmap
---- 
+map_traverse :: (I ~ f, Map t) => (a -> f b) -> t a -> f (t b)
+map_traverse aib = I< map (unI< aib)
 
 cocollect :: forall c f t a b. (Traverse c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
-
-{-instance (c (Baz c t b), forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa)))) => Traverse c (Baz c t b) where-}
-
 type Mapped = Traversed ((~) I)
 
-class Promap p => Traversed (c :: (* -> *) -> Constraint) p where
+class (Promap p, c ==> Map) => Traversed (c :: (* -> *) -> Constraint) p where
   traversed :: Traverse c t => p a b -> p (t a) (t b)
-
-instance {-# overlappable #-} (Promap p, Traversal c p) => Traversed c p where
   traversed = traversal @c (traverse @c)
-
-class Traversed c p => Traversal (c :: (* -> *) -> Constraint) p where
   traversal :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
-  default traversal :: (forall ff bb aa. c ff => (Map ff, c (O ff (Bazaar c bb aa)))
+  default traversal :: (forall ff bb aa. c ff => c (O ff (Bazaar c bb aa))
                        ,c I , c (Baz c t b))
                     => (forall f. c f => (a -> f b) -> s -> f t)
                     -> p a b -> p s t
   traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed @c pab)
 
+class Traversed Map p => Lensed p where
+  lens :: (s -> a) -> (s -> b -> t) -> p a b -> p s t
+  lens get set = traversal @Map \ afb s -> set s `map` afb (get s)
+  _2 :: p a b -> p (x,a) (x,b)
+  _2 = traversed @Map
+  _1 :: p a b -> p (a,x) (b,x)
+  _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
-_2 :: Traversed Map p => p a b -> p (x,a) (x,b)
-_2 = traversed @Map
-_1 :: Traversed Map p => p a b -> p (a,x) (b,x)
-_1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
-
-lens :: Traversal Map p => (s -> a) -> (s -> b -> t) -> p a b -> p s t
-lens get set = traversal @Map \ afb s -> set s `map` afb (get s)
-
-lens0 :: (Choice p, Traversed Map p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
+lens0 :: (Prismed p, Lensed p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
 
-class Promap p => Choice p where
+class Promap p => Prismed p where
   {-# minimal prism #-}
   prism :: (s -> E t a) -> (b -> t) -> p a b -> p s t
   prism pat constr = promap pat (id ||| constr) < _R
@@ -273,26 +148,6 @@ class Promap p => Choice p where
   _L :: p a b -> p (E a y) (E b y)
   _L = promap E.swap E.swap < _R
 
-instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
-  traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}
-
-
-instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x) where traverse f (x,a) = map (x,) (f a)
-
-instance (c ==> Applicative) => Traverse c [] where
-  traverse f = go where
-    go = \case
-      [] -> pure []
-      a : as -> (:) `map` f a `ap` go as
-{-traverse0 = traverse @Pure @-}
-
-
-
-instance (c ==> Map, c I) => Traversed c (->) where traversed = map
-instance (c ==> Map, c I) => Traversal c (->) where
- traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
-
-
 class Traversed IsEither p => Precoerce p where
   {-# minimal from | precoerce #-}
   from :: (b -> t) -> p a b -> p s t
@@ -300,31 +155,8 @@ class Traversed IsEither p => Precoerce p where
   precoerce :: p a x -> p s x
   precoerce = from \ x -> x
 
-instance (c ==> Map
-         ,Map (Baz c t b)
-         ,forall f b a. c f => c (O f (Bazaar c b a)))
-  => Traverse c (Baz c t b) where
-     traverse f (Baz bz) = map Baz_ (unO (bz (\x -> O (map (sell @c) (f x)))))
 
 
--- * O Instances
-instance (Map f, Map g) => Map (O f g) where map f (O fg) = O (map (map f) fg)
-instance (Remap f, Remap g) => Remap (O f g) where remap f g (O fg) = O (remap (remap g f) (remap f g) fg)
-instance (Map f, Strong g) => Strong (O f g) where strong a (O fg) = O (map (strong a) fg)
-
--- * Baz instances
-instance Map (Baz c t b) where map xy (Baz xfbft) = Baz (\yfb -> xfbft (\x -> yfb (xy x)))
-instance Remap (Baz c t b) where remap _ = map
-instance Strong (Baz c t b) where strong x (Baz afbft) = Baz (\xafb -> afbft (\a -> xafb (x,a)))
-
-instance (c (Bazaar c a b), forall f. c f => Map f) => Map (Bazaar c a b) where
-  map f (Bazaar m) = Bazaar (\k -> map f (m k))
-instance (forall f. c f => Map f) => Strong (Bazaar c a b) where
-  strong a = \(Bazaar m) -> Bazaar (\k -> map (a,) (m k))
-instance (forall f. c f => Map f) => Remap (Bazaar c a b) where
-  remap _ f (Bazaar m) = Bazaar (\k -> map f (m k))
-instance (c (Bazaar c a b), forall f. c f => (Map f, Pure f)) => Pure (Bazaar c a b) where
-  pure t = Bazaar (\_ ->  pure t)
 
 -- * Coerce
 -- | Representational equality
@@ -358,20 +190,167 @@ instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), Coercepromap p)=
 -- * Remap
 class Coercemap f => Remap f where remap :: (b -> a) -> (a -> b) -> f a -> f b
 
-instance Impl Remap where
-  type Methods Remap = '["remap"]
-  impl f (Arg remap) = [d|instance Remap $f where remap = $remap|]
+-- * Instances
 
 instance Remap [] where remap _ = P.map
-instance Remap ((->) x) where remap _ f g = \a ->  f (g a)
-instance Remap (E x) where remap _ f = \case {L x -> L x; R a -> R (f a)}
-instance Remap I where remap _ f (I a) = I (f a)
-instance Remap ((,) x) where remap _ f (x,a) = (x, f a)
+instance Strong [] where strong a = P.map (a,)
+instance Map [] where map = P.map
+instance Pure [] where pure a = [a]
+instance (c ==> Applicative) => Traverse c [] where
+  traverse f = go where
+    go = \case
+      [] -> pure []
+      a : as -> (:) `map` f a `ap` go as
+instance Distribute IsEither [] where
+  distribute = \case {L x -> [L x]; R ts -> map R ts}
+  zipWithF fab = \case
+    L x -> [fab (L x)]
+    R ta -> map (\a -> fab (R a)) ta
+  collect atb = \case
+    L x -> [L x]
+    R a -> map R (atb a)
 
-instance {-# Overlappable #-} Remap f => Coercemap f where coercemap f !x = remap coerce f x
-instance Remap P.IO where remap _ = P.fmap
+instance Remap   ((->) x) where remap _ f g = \a ->  f (g a)
+instance Strong  ((->) x) where strong x g  = \a -> (x,g a)
+instance Map     ((->) x) where map f g     = \a ->  f (g a)
+instance Traverse ((~) I) ((->) x)    where traverse = map_traverse
+instance Postmap (->)     where postmap     = map
+instance Premap  (->)     where premap      = \f p a -> p (f a)
+instance Promap  (->)     where promap      = \f g p a -> g (p (f a))
+instance (c ==> Map, Map ((->) x)) => Distribute c ((->) x)
+  where distribute fxa = \x -> map (\xa -> xa x) fxa
+instance Closed  (->)     where distributed = map; closed f = (f <)
+instance (c ==> Map, c I) => Traversed c (->) where
+ traversed = map
+ traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
 
+
+
+instance Remap  (E x) where remap _ f = \case {L x -> L x; R a -> R (f a)}
+instance Strong (E x) where strong x  = \case {L x -> L x; R a -> R (x,a)}
+instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
+instance Pure (E x)   where pure = R
+instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
+  traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}
+instance Distribute IsEither (E x) where
+  distribute = \case {L y -> R (L y); R (L x) -> L x; R (R a) -> R (R a)}
+
+instance Remap I  where remap _ f (I a) = I (f a)
+instance Strong I where strong x (I a)  = I (x,a)
+instance Map I    where map f (I a)     = I (f a)
+instance Pure I where pure = I
+instance Apply I where ap (I f) (I a) = I (f a)
+instance Applicative I
+instance Traverse ((~) I) I    where traverse = map_traverse
+instance (c ==> Map, Map I) => Distribute c I
+  where distribute (fia :: f (I a)) = I (coercemap unI fia)
+
+instance Remap ((,) x)  where remap _ f (x,a) = (x, f a)
+instance Strong ((,) x) where strong y (x,a)  = (x,(y,a))
+instance Map ((,) x)    where map f (x,a)     = (x, f a)
+instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x)
+  where traverse f (x,a) = map (x,) (f a)
 
 instance Map (K a) where map _ = coerce
+instance Traverse ((~) I) (K a) where traverse = map_traverse
 instance Remap (K a) where remap _ _ = coerce
 instance Strong (K a) where strong _ = coerce
+instance Zero a => Pure (K a) where pure _ = K zero
+instance (c ==> Map, Def a, Map (K a)) => Distribute c (K a)
+  where distribute _ = K def
+
+instance Remap P.IO where remap _ = P.fmap
+instance Strong P.IO where strong a = P.fmap (a,)
+instance Map P.IO where map = P.fmap
+instance Traverse ((~) I) P.IO where traverse = map_traverse
+
+instance (Map f, Map g) => Map (O f g)
+  where map f (O fg) = O (map (map f) fg)
+instance (Map f, Map g) => Traverse ((~) I) (O f g) where traverse = map_traverse
+instance (Remap f, Remap g) => Remap (O f g)
+  where remap f g (O fg) = O (remap (remap g f) (remap f g) fg)
+instance (Map f, Strong g) => Strong (O f g)
+  where strong a (O fg) = O (map (strong a) fg)
+
+instance Map (Baz c t b) where
+  map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
+instance Traverse ((~) I) (Baz c t b) where traverse = map_traverse
+instance Remap (Baz c t b)
+  where remap _ = map
+instance Strong (Baz c t b)
+  where strong x (Baz afbft) = Baz (\xafb -> afbft (\a -> xafb (x,a)))
+instance (c ==> Map
+         ,Map (Baz c t b)
+         ,forall f b a. c f => c (O f (Bazaar c b a)))
+  => Traverse c (Baz c t b) where
+     traverse f (Baz bz) = map Baz_ (unO (bz (\x -> O (map (sell @c) (f x)))))
+
+instance (c (Bazaar c a b), forall f. c f => Map f) => Map (Bazaar c a b) where
+  map f (Bazaar m) = Bazaar (\k -> map f (m k))
+instance (forall f. c f => Map f) => Strong (Bazaar c a b) where
+  strong a = \(Bazaar m) -> Bazaar (\k -> map (a,) (m k))
+instance (forall f. c f => Map f) => Remap (Bazaar c a b) where
+  remap _ f (Bazaar m) = Bazaar (\k -> map f (m k))
+instance (c (Bazaar c a b), forall f. c f => (Map f, Pure f)) => Pure (Bazaar c a b) where
+  pure t = Bazaar (\_ ->  pure t)
+instance {-# Overlappable #-} Remap f => Coercemap f where coercemap f !x = remap coerce f x
+instance {-# Overlappable #-} Promap p => Coercepromap p where
+  coercepromap _ _ !p = promap coerce coerce p
+-- |A @Pure f@ distributes through Sum types:
+--  http://r6research.livejournal.com/28338.html
+instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero
+
+-- * IsEither
+type family LeftF t where LeftF (E a) = a
+class (Map f, f ~ E (LeftF f)) => IsEither f
+instance IsEither (E a)
+
+type family Left t where Left (E a b) = a
+type family Right t where Right (E a b) = b
+class a ~ E (Left a) (Right a) => IsEither' a
+instance a ~ E (Left a) (Right a) => IsEither' a
+
+-- * Impl
+{-instance Impl Postmap where-}
+  {-type Methods Postmap = '["postmap"]-}
+  {-impl p (Arg postmap) = [d|-}
+    {-instance Postmap $p where postmap  = $postmap-}
+    {-instance Map    ($p [tv|x|]) where map      = $postmap-}
+    {-instance Strong ($p [tv|x|]) where strong a = $postmap ((,) a)-}
+    {-instance Remap  ($p [tv|x|]) where remap _  = $postmap-}
+   {-|]-}
+{-instance Impl Strong where-}
+  {-type Methods Strong = '["remap", "strong"]-}
+  {-impl f (Arg remap) (Arg strong) = [d|-}
+    {-instance Remap  $f where remap  = $remap-}
+    {-instance Strong $f where strong = $strong-}
+   {-|]-}
+{-instance Impl Premap where-}
+  {-type Methods Premap = '["premap"]-}
+  {-impl p (Arg premap) = [d|instance Premap $p where premap  = $premap|]-}
+{-instance Impl Promap where-}
+  {-type Methods Promap = '["promap"]-}
+  {-impl p (Arg promap) = [d|-}
+    {-instance Promap  $p where promap   = $promap-}
+    {-instance Premap  $p where premap f = $promap f \ x -> x-}
+    {-instance Postmap $p where postmap  = $promap \ x -> x-}
+    {-instance Map    ($p [tv|x|]) where map      = postmap-}
+    {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
+    {-instance Remap  ($p [tv|x|]) where remap _  = map-}
+   {-|]-}
+{-instance Impl Pure where-}
+  {-type Methods Pure = '["remap", "pure"]-}
+  {-impl f (arg #remap -> r) (arg #pure -> p) = [d|-}
+    {-instance Pure   $f where pure = $p-}
+    {-instance Remap  $f where remap _  = $r-}
+   {-|]-}
+{-instance Impl Map where-}
+  {-type Methods Map = '["map"]-}
+  {-impl f (Arg map) = [d|-}
+    {-instance Map    $f where map      = $map-}
+    {-instance Strong $f where strong a = $map ((,) a)-}
+    {-instance Remap  $f where remap _  = $map-}
+   {-|]-}
+{-instance Impl Remap where-}
+  {-type Methods Remap = '["remap"]-}
+  {-impl f (Arg remap) = [d|instance Remap $f where remap = $remap|]-}

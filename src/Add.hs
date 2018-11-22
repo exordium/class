@@ -7,3 +7,4 @@ class (Zero a, Add a) => Add0 a
 
 instance Zero [x] where zero = []
 instance Add [x] where add = (P.++)
+instance Zero () where zero = ()

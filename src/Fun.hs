@@ -3,12 +3,12 @@
 {-# language DefaultSignatures #-}
 {-# language FunctionalDependencies #-}
 module Fun (module Fun, module X) where
-import Promap
+{-import Promap-}
 import qualified Prelude as P
 import Prelude as X (($),($!))
 import Prelude as X (Bool(..),IO,print,Char,Double,Int,(+),Maybe(..),maybe,Integer,Integral(..),Num(..))
 import Data.Maybe (fromMaybe)
-import Named as X (WithParam,(:!),(:?))
+import Named as X (WithParam,(:!),(:?),arg)
 import Named.Internal as X (Param(..),Decide)
 import qualified Named
 import qualified Named.Internal as Named

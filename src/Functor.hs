@@ -7,12 +7,43 @@ import Type.I
 import Type.O
 import Type.K
 import Type.E
+import Type.X
 import qualified Prelude as P
 import Types
 import Fun
 {-import {-# source #-} Control-}
 
-class (Traverse IsI f, Strong f) => Map f where
+-- | A @FZero f@ is a functor with a particular empty shape singled out
+-- Dual to 'Pure'
+class (Remap f, Zero (f X)) => FZero f where
+  fzero :: f X
+  fzero = lose (\x -> x)
+  lose :: (a -> X) -> f a
+  lose f = remap f absurd fzero
+-- | Covariant 'FZero' can be 'empty' for any type.
+class (Map f, FZero f, forall x. Zero (f x)) => Empty f where
+  empty :: f a
+  empty = map absurd fzero
+
+-- | A functor over a particular kliesli category
+class (Map f, Monad m) => MapM m f where
+  mapM :: (a -> m b) -> f a -> f b
+  join :: f (m a) -> f a
+  join = mapM \ x -> x
+mapM_map :: forall f a b. MapM I f => (a -> b) -> f a -> f b
+mapM_map = mapM @I @f < coerce
+map_mapM :: Map f => (a -> I b) -> f a -> f b
+map_mapM = map < coerce
+
+-- | 
+-- prop> filter (False!) = (empty!)
+-- prop> filter (True!) = id
+class (Empty f, MapM Maybe f) => Filter f where
+  filter :: (a -> Bool) -> f a -> f a
+  filter f = mapM (\a -> case f a of False -> Nothing; True -> Just a)
+
+
+class (Traverse IsI f, Strong f, MapM I f) => Map f where
   map :: (a -> b) -> f a -> f b
   constMap :: b -> f a -> f b
   constMap b = map \ _ -> b
@@ -91,8 +122,9 @@ for t f = traverse @Applicative f t
 (@@) = for
 
 class Map f => Apply f where ap :: f (a -> b) -> f a -> f b
+class (MapM f f, Apply f) => Bind f where bind :: (a -> f b) -> f a -> f b
 class (Pure f, Apply f) => Applicative f
-class Applicative f => Monad f where bind :: (a -> f b) -> f a -> f b
+class (Applicative f, Bind f) => Monad f 
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
 class (Lifting Zero One f, Remap f) => Pure f where
   fone :: f ()
@@ -114,6 +146,7 @@ type family LeftF t where LeftF (E a) = a
 class (Map f, f ~ E (LeftF f)) => IsEither f
 instance IsEither (E a)
 
+instance Monad f => MapM f (K a) where mapM _ = coerce
 instance Map (K a) where map _ = coerce
 instance Map# (K a) where map# _ = coerce
 instance Remap (K a) where remap _ _ = coerce
@@ -122,11 +155,14 @@ instance Strong (K a) where strong _ = coerce
 instance Map# I  where map# = coerce_map#
 instance Remap I  where remap _ f (I a) = I (f a)
 instance Strong I where strong x (I a)  = I (x,a)
+instance MapM I I where mapM f (I a) = f a
 instance Map I    where map f (I a)     = I (f a)
 instance Zero a => One (I a) where one = I zero
 instance Pure I where pure = I
 instance Apply I where ap (I f) (I a) = I (f a)
 instance Applicative I
+instance Bind I where bind f (I a) = f a
+instance Monad I
 instance Traverse IsI I    where traverse = map_traverse
 instance (c ==> Map, Map I) => Distribute c I
   where distribute (fia :: f (I a)) = I (map# unI fia)
@@ -134,6 +170,7 @@ instance (c ==> Map, Map I) => Distribute c I
 instance Map# ((,) x)  where map# = coerce_map#
 instance Remap ((,) x)  where remap _ f (x,a) = (x, f a)
 instance Strong ((,) x) where strong y (x,a)  = (x,(y,a))
+instance MapM I ((,) x) where mapM = map_mapM
 instance Map ((,) x)    where map f (x,a)     = (x, f a)
 instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x)
   where traverse f (x,a) = map (x,) (f a)
@@ -149,9 +186,12 @@ instance (c ==> Map, Zero a, Map (K a)) => Distribute c (K a)
 instance Map# P.IO where map# = coerce_map#
 instance Remap P.IO where remap _ = P.fmap
 instance Strong P.IO where strong a = P.fmap (a,)
+instance MapM I P.IO where mapM = map_mapM
 instance Map P.IO where map = P.fmap
 instance Traverse IsI P.IO where traverse = map_traverse
 
+instance (MapM I f, MapM I g) => MapM I (O f g)
+  where mapM f (O fg) = O (mapM (I < mapM f) fg)
 instance (Map f, Map g) => Map (O f g)
   where map f (O fg) = O (map (map f) fg)
 instance (Map f, Map g) => Traverse IsI (O f g) where traverse = map_traverse
@@ -161,9 +201,12 @@ instance (Remap f, Remap g) => Remap (O f g)
 instance (Map f, Strong g) => Strong (O f g)
   where strong a (O fg) = O (map (strong a) fg)
 
+instance FZero [] where fzero = []
+instance Empty []
 instance Remap [] where remap _ = P.map
 instance Map# [] where map# = coerce_map#
 instance Strong [] where strong a = P.map (a,)
+instance MapM I [] where mapM = coerce < map @[]
 instance Map [] where map = P.map
 instance Pure [] where pure a = [a]
 instance (c ==> Applicative) => Traverse c [] where
@@ -183,12 +226,14 @@ instance Distribute IsEither [] where
 instance Map#   ((->) x) where map# = coerce_map#
 instance Remap   ((->) x) where remap _ f g = \a ->  f (g a)
 instance Strong  ((->) x) where strong x g  = \a -> (x,g a)
+instance MapM I ((->) x) where mapM = map_mapM
 instance Map     ((->) x) where map f g     = \a ->  f (g a)
 instance Traverse IsI ((->) x)    where traverse = map_traverse
 
 instance Map# (E x) where map# = coerce_map#
 instance Remap  (E x) where remap _ f = \case {L x -> L x; R a -> R (f a)}
 instance Strong (E x) where strong x  = \case {L x -> L x; R a -> R (x,a)}
+instance MapM I (E x) where mapM = map_mapM
 instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 instance Zero x => Zero (E x a) where zero = L zero
 instance Zero a => One (E x a) where one = R zero
@@ -197,3 +242,4 @@ instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
   traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}
 instance Distribute IsEither (E x) where
   distribute = \case {L y -> R (L y); R (L x) -> L x; R (R a) -> R (R a)}
+

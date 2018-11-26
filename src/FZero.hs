@@ -1,5 +1,5 @@
 module FZero where
-import X
+import Type.X
 import Remap
 import Map
 import Add

@@ -1,12 +1,7 @@
-{-# language UndecidableInstances #-}
-{-# language TemplateHaskell #-}
-{-# language QuasiQuotes #-}
-module Bazaar where
+module Type.Bazaar where
 import GHC.Types
-import I
-import O
-import Impl
-import TV
+import Type.I
+import Type.O
 
 newtype Baz (c :: (* -> *) -> Constraint) t b a = Baz_ (Bazaar c a b t)
 

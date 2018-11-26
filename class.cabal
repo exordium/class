@@ -21,5 +21,8 @@ common x
 
 library
   import: x
+  exposed-modules: Data, Control, Fun, Optic, Mono, Functor
+                 , Types, Type.I, Type.O, Type.K, Type.E, Type.X, Type.Bazaar
   hs-source-dirs: src
   build-depends: base, template-haskell, named, impl, ghc-prim, church
+               , containers

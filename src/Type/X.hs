@@ -1,5 +1,5 @@
 {-# language EmptyCase #-}
-module X where
+module Type.X where
 data X
 absurd :: X -> a
 absurd = \case{}

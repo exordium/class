@@ -1,4 +1,4 @@
-module I where
+module Type.I where
 import qualified Prelude as P
 {-import Applicative-}
 

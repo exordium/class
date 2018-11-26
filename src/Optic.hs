@@ -1,19 +1,17 @@
 {-# language TemplateHaskell,QuasiQuotes #-}
 {-# language UndecidableInstances #-}
-module Optic.Optic where
-import Map
+{-# language MagicHash #-}
+module Optic where
 import Types
-import Closed
 import TV
-import Impl
-import Promap
-import Fun hiding ((!))
-import Applicative
-import Coerce
-import Traverse
-import Distribute
-import E
-import IsEither
+import Impl hiding ((!))
+import Fun
+import Control
+import Type.E
+import Type.K
+import qualified Prelude as P
+import Functor
+import Data
 
 --- SETTER
 
@@ -24,7 +22,7 @@ set l b s = l (\_ -> b) s
 
 newtype Grate a b s t = Grate {runGrate :: (((s -> a) -> b) -> t)}
 impl @Promap [t|Grate [tv|a|] [tv|b|]|]
-  ! #promap [|\sa bt (Grate aabb) -> Grate \ sab -> bt (aabb \ aa -> sab \ s -> aa (sa s))|]
+  $$ #promap [|\sa bt (Grate aabb) -> Grate \ sab -> bt (aabb \ aa -> sab \ s -> aa (sa s))|]
 
 instance Closed (Grate a b) where
   closed (Grate z) = Grate (\f x -> z (\k -> f (\g -> k (g x))))
@@ -51,25 +49,26 @@ zipOf g reduce fs = g grate0 `runGrate` \get -> reduce (map get fs)
 
 newtype Zip2 a b = Zip2 {runZip2 :: a -> a -> b}
 
-impl @Promap [t|Zip2|] ! #promap [|\f g (Zip2 z) -> Zip2 \ a a' -> g (z (f a) (f a'))|]
+impl @Promap [t|Zip2|] $$ #promap [|\f g (Zip2 z) -> Zip2 \ a a' -> g (z (f a) (f a'))|]
 instance Closed (Zip2) where closed (Zip2 z) = Zip2 \ xa xa' x -> z (xa x) (xa' x)
 instance Apply (Zip2 x) where ap (Zip2 xxab) (Zip2 xxa) = Zip2 \ x x' -> xxab x x' (xxa x x')
 instance Pure (Zip2 x) where pure a = Zip2 \ _ _ -> a
 {-instance Applicative (Zip2 x)-}
 
-_Zip2_ = coercepromap Zip2 runZip2
+_Zip2_ :: forall p a b s t. Promap# p => Zip2 a b `p` Zip2 s t -> (a -> a -> b) `p` (s -> s -> t)
+_Zip2_ = promap# Zip2 runZip2
 
 --- ISO
 
 data Iso a b s t = Iso (s -> a) (b -> t)
 idiso = Iso id id
-impl @Promap [t|Iso [tv|a|] [tv|b|]|] ! #promap [|\f g (Iso sa bt) -> Iso (f > sa) (g < bt)|]
+impl @Promap [t|Iso [tv|a|] [tv|b|]|] $$ #promap [|\f g (Iso sa bt) -> Iso (f > sa) (g < bt)|]
 
 repIso :: (forall p. Promap p => p a b -> p s t) -> Iso a b s t
 repIso p = p (Iso (\a -> a) (\b -> b))
 
-_coerce_ :: forall s t a b p. (Coercepromap p, s =# a, b =# t ) => p a b -> p s t
-_coerce_ = coercepromap coerce coerce
+_coerce_ :: forall s t a b p. (Promap# p, s =# a, b =# t ) => p a b -> p s t
+_coerce_ = promap# coerce coerce
 
 
 -- Traversing
@@ -77,22 +76,24 @@ _coerce_ = coercepromap coerce coerce
 newtype Traversing f a b = Traversing {runTraversing :: a -> f b}
 -- | Lift an f-operation over the target of a traversal
 _Traversing_ :: (Traversing f a b -> Traversing f s t) -> (a -> f b) -> s -> f t
-_Traversing_ = coercepromap Traversing runTraversing
+_Traversing_ = promap# Traversing runTraversing
 
 instance Map f => Promap (Traversing f) where promap f g (Traversing s) = Traversing (promap f (map     g) s)
 instance Premap (Traversing f) where premap f (Traversing s) = Traversing (f > s)
 instance Map f => Postmap (Traversing f) where postmap g (Traversing s) = Traversing (map g < s)
 instance Remap f => Remap (Traversing f a) where remap f g (Traversing s) = Traversing (remap f g < s)
+instance Map# f => Map# (Traversing f a) where map# f (Traversing s) = Traversing (map# f < s)
 instance Map f => Map (Traversing f a) where map = postmap
+instance Map f => Traverse IsI (Traversing f a) where traverse = map_traverse
 instance Strong f => Strong (Traversing f a) where strong a (Traversing s) = Traversing (strong a < s)
 instance  Distribute Map f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect @Map afb)
-instance (c f, Traverse c f) => Traversal c (Traversing f) where
+instance (c ==> Map, c f) => Traversed c (Traversing f) where
   traversal afbsft (Traversing afb) = Traversing (afbsft afb)
 
 -- PRISM
 
-_Just :: Choice p => p a b -> p (Maybe a) (Maybe b)
+_Just :: Prismed p => p a b -> p (Maybe a) (Maybe b)
 _Just = prism (\case {Nothing -> L Nothing; Just a -> R a}) Just
 
 data Prism a b s t = Prism (s -> E t a) (b -> t)
@@ -113,13 +114,15 @@ preview l = match' l Nothing Just
 
 
 impl @Promap [t|Prism [tv|a|] [tv|b|]|]
-  ! #promap [|\f g (Prism seta bt) -> Prism (((L < g) ||| R) < seta < f) (g < bt)|]
-{-prismic pat constr -}
-{-instance Distributed IsEither (Prism a b) where distributed = distributed'-}
-distributed' :: IsEither f => Prism a b s t -> Prism a b (f s) (f t)
-distributed' (Prism pat constr) = (`Prism` (R < constr)) \ case
-    L c -> L (L c)
-    R s -> case pat s of
-      L t -> L (R t)
-      R a -> R a
-{-instance Traversed IsEither (Prism a b)-}
+  $$ #promap [|\f g (Prism seta bt) -> Prism (((L < g) ||| R) < seta < f) (g < bt)|]
+
+newtype View r a (b :: *) = View {runView :: a -> r}
+_View_ :: Promap# p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
+_View_ = promap# View runView
+
+impl @Promap [t|View [tv|r|] |] $$ #promap [|\f g (View an) -> View \ s -> an (f s)|]
+instance c m => Traversed (IsK c) (View m) where
+  traversal akmskm (View am) = View (unK < akmskm (K < am))
+
+{-instance Traverse (IsK P.Monoid) P.Set-}
+

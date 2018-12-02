@@ -51,16 +51,23 @@ class (Arr p, Prismed p) => ArrowChoice p  where
 
 
 -- * Promap
-class (forall x. Map (f x)) => Postmap f
-  where postmap :: (b -> t) -> f x b -> f x t
-class Premap f where premap :: (s -> a) -> f a x -> f s x
-class Promap# p where
+class (forall x. Map# (p x)) => Promap# p where
+  {-# minimal promap# | premap#,postmap# #-}
   promap# :: (s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
-  default promap# :: (Representational2 p, s =# a, b =# t)
-                       => (s -> a) -> (b -> t) -> p a b -> p s t
-  promap# _ _ = coerce
-class (Premap p, Postmap p, Promap# p) => Promap p
-  where promap :: (s -> a) -> (b -> t) -> p a b -> p s t
+  promap# f g = premap# f > postmap# g
+  premap# :: (s =# a) => (s -> a) -> p a t -> p s t
+  premap# = (`promap#` \ t -> t)
+  postmap# :: (b =# t) => (b -> t) -> p s b -> p s t
+  postmap# = promap# \ s -> s
+
+class (forall x. Map (p x), Promap# p) => Promap p where
+  {-# minimal promap | premap,postmap #-}
+  promap  :: (s -> a) -> (b -> t) -> p a b -> p s t
+  promap f g = premap f > postmap g
+  premap  :: (s -> a) -> p a t -> p s t
+  premap = (`promap` \ t -> t)
+  postmap :: (b -> t) -> p s b -> p s t
+  postmap =  promap  \ s -> s
 
 -- * Closed
 class Promap p => Closed p where
@@ -73,17 +80,20 @@ class Promap p => Closed p where
   zipping :: (forall f. Map f => (f a -> b) -> f s -> t) -> p a b -> p s t
   zipping sabsst = grate (`sabsst` \ s -> s)
 
+type Fold c = Traverse (IsK c)
 
-
-foldMap :: forall c t a m. (Traverse (IsK c) t, c m) => (a -> m) -> t a -> m
+foldMap :: forall c t a m. (Fold c t, c m) => (a -> m) -> t a -> m
 foldMap am = unK < traverse @(IsK c) (K < am)
 
-for_ :: forall c t a m. (Traverse (IsK c) t, c m) => t a -> (a -> m) -> m
+for_ :: forall c t a m. (Fold c t, c m) => t a -> (a -> m) -> m
 for_ s am = foldMap @c am s
-(@+) :: forall t a m. (Traverse (IsK Add0) t, Add0 m) => t a -> (a -> m) -> m
-(@+) = for_ @Add0
-(@*) :: forall t a m. (Traverse (IsK Mul1) t, Mul1 m) => t a -> (a -> m) -> m
-(@*) = for_ @Mul1
+
+{-(./) :: (Fold Add0 t, Add0 m) => t a -> (a -> m) -> m-}
+{-(./) = for_ @Add0-}
+{-(+/) :: (Fold Add0 t, Add0 m) => t a -> (a -> m) -> m-}
+{-(+/) = for_ @Add0-}
+{-(*/) :: (Fold Mul1 t, Mul1 m) => t a -> (a -> m) -> m-}
+{-(*/) = for_ @Mul1-}
 
 
 cocollect :: forall c f t a b. (Traverse c t, c ==> Map, c f)
@@ -139,9 +149,11 @@ instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), Promap# p)=> Rep
 
 -- * Instances
 
-instance Postmap (->)     where postmap     = map
-instance Premap  (->)     where premap      = \f p a -> p (f a)
-instance Promap  (->)     where promap      = \f g p a -> g (p (f a))
+instance Promap (->) where
+  promap  = \f g p s -> g (p (f s))
+  premap  = \f p s -> p (f s)
+  postmap = \g p a -> g (p a)
+instance Promap# (->) where promap# _ _ = coerce
 instance (c ==> Map, Map ((->) x)) => Distribute c ((->) x)
   where distribute fxa = \x -> map (\xa -> xa x) fxa
 instance Closed  (->)     where distributed = map; closed f = (f <)
@@ -157,14 +169,14 @@ instance Category (->)
 
 
 
+deriving via (Representational_Defaults (Baz c t b)) instance Map# (Baz c t b)
+deriving via (Map_Defaults (Baz c t b)) instance MapM I (Baz c t b)
+deriving via (Map_Defaults (Baz c t b)) instance Remap (Baz c t b)
+deriving via (Map_Defaults (Baz c t b)) instance Strong (Baz c t b)
+{-deriving via (Map_Defaults (Baz c t b)) instance Traverse IsI (Baz c t b)-}
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 instance Traverse IsI (Baz c t b) where traverse = map_traverse
-instance Map# (Baz c t b) where map# = coerce_map#
-instance Remap (Baz c t b)
-  where remap _ = map
-instance Strong (Baz c t b)
-  where strong x (Baz afbft) = Baz (\xafb -> afbft (\a -> xafb (x,a)))
 instance (c ==> Map
          ,Map (Baz c t b)
          ,forall f b a. c f => c (O f (Bazaar c b a)))
@@ -181,8 +193,8 @@ instance (c ==> Map) => Remap (Bazaar c a b) where
   remap _ f (Bazaar m) = Bazaar (\k -> map f (m k))
 instance (c (Bazaar c a b), forall f. c f => (Map f, Pure f)) => Pure (Bazaar c a b) where
   pure t = Bazaar (pure t!)
-instance {-# Overlappable #-} Promap p => Promap# p where
-  promap# _ _ !p = promap coerce coerce p
+{-instance {-# Overlappable #-} Promap p => Promap# p where-}
+  {-promap# _ _ !p = promap coerce coerce p-}
 -- |A @Pure f@ distributes through Sum types:
 --  http://r6research.livejournal.com/28338.html
 instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero
@@ -210,23 +222,61 @@ instance {-# overlappable #-} (Arrow p, ArrowChoice p) => P.ArrowChoice p where
 
 -- * Ops
 
-(^>) :: Premap p => (s -> a) -> p a x -> p s x
+(^>) :: Promap p => (s -> a) -> p a x -> p s x
 (^>) = premap
 p <^ f = premap f p
 p >^ f = postmap f p
-(^<) :: Postmap p => (b -> t) -> p x b -> p x t
+(^<) :: Promap p => (b -> t) -> p x b -> p x t
 (^<) = postmap
 
 -- * Impl
-instance Impl Promap where
-  type Methods Promap = '["promap"]
-  impl p (Arg promap) = [d|
-    instance Promap  $p where promap   = $promap
-    instance Premap  $p where premap f = $promap f \ x -> x
-    instance Postmap $p where postmap  = $promap \ x -> x
-    instance Map    ($p [tv|x|]) where map      = postmap
-    instance Traverse IsI ($p [tv|x|]) where traverse = map_traverse
-    instance Strong ($p [tv|x|]) where strong a = map ((,) a)
-    instance Remap  ($p [tv|x|]) where remap _  = map
-    instance Map#  ($p [tv|x|]) where map# = remap_map#
-   |]
+newtype Promap_Defaults (p :: * -> * -> *) a b = Promap (p a b)
+  deriving newtype Promap
+  deriving (Strong,Remap,Map#, MapM I) via (Map_Defaults (p a))
+instance Promap p => Map          (Promap_Defaults p x) where map      = postmap
+instance Promap p => Traverse IsI (Promap_Defaults p x) where traverse = map_traverse
+instance Promap p => Promap# (Promap_Defaults p) where
+  promap# _ _ !p = promap coerce coerce p
+  premap# _ !p = premap coerce p
+  postmap# _ !p = postmap coerce p
+
+newtype Traverse_Defaults t (a :: *) = Traverse (t a)
+  deriving (Map#, Strong, Remap, MapM I) via (Map_Defaults t)
+instance (c ==> Map#, Traverse c t) => Traverse c (Traverse_Defaults t)
+  where traverse f (Traverse t) = map# Traverse (traverse @c f t)
+instance Traverse IsI t => Map (Traverse_Defaults t)
+  where map f = unI < traverse @IsI (I < f) 
+
+
+newtype Map_Defaults f a = Map (f a)
+  deriving newtype Map
+  deriving Map# via (Remap_Defaults f)
+instance Map f => MapM I       (Map_Defaults f) where mapM     = map_mapM
+instance Map f => Strong       (Map_Defaults f) where strong a = map (a,)
+instance Map f => Remap        (Map_Defaults f) where remap _  = map
+instance Map f => Traverse IsI (Map_Defaults f) where traverse = map_traverse
+
+newtype Remap_Defaults f a = Remap (f a) deriving newtype Remap
+instance Remap f => Map# (Remap_Defaults f) where map# = remap_map#
+
+newtype Representational_Defaults f a = Representational (f a)
+instance Representational f => Map# (Representational_Defaults f) where map# = coerce_map#
+
+
+
+{-instance MapM I (Baz c t b) where mapM = map_mapM-}
+{-deriving via (Promap_Defaults (Baz c t) b) instance Promap (Baz c t) => MapM I (Baz c t b)-}
+
+
+{-instance Impl Promap where-}
+  {-type Methods Promap = '[Required "promap"]-}
+  {-impl p (Arg promap) = [d|-}
+    {-instance Promap  $p where promap   = $promap-}
+    {-instance Premap  $p where premap f = $promap f \ x -> x-}
+    {-instance Postmap $p where postmap  = $promap \ x -> x-}
+    {-instance Map    ($p [tv|x|]) where map      = postmap-}
+    {-instance Traverse IsI ($p [tv|x|]) where traverse = map_traverse-}
+    {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
+    {-instance Remap  ($p [tv|x|]) where remap _  = map-}
+    {-instance Map#  ($p [tv|x|]) where map# = remap_map#-}
+   {-|]-}

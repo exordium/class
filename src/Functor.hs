@@ -26,7 +26,7 @@ class (Map f, FZero f, forall x. Zero (f x)) => Empty f where
   empty = map absurd fzero
 
 -- | A functor over a particular kliesli category
-class (Map f, Monad m) => MapM m f where
+class Monad m => MapM m f where
   mapM :: (a -> m b) -> f a -> f b
   join :: f (m a) -> f a
   join = mapM \ x -> x

@@ -1,11 +1,12 @@
 {-# language FlexibleContexts #-}
+{-# language MagicHash #-}
 {-# language UndecidableSuperClasses #-}
 {-# language DefaultSignatures #-}
 {-# language FunctionalDependencies #-}
 module Fun (module Fun, module X) where
 {-import Promap-}
 import qualified Prelude as P
-import Prelude as X (Bool(..),IO,print,Char,Double,Int,(+),Maybe(..),maybe,Integer,Integral(..),Num(..))
+import Prelude as X (Bool(..),IO,print,Char,Double,Int,Maybe(..),maybe,Integer,Integral(..),Num(..))
 import Data.Maybe (fromMaybe)
 import Named as X (WithParam,(:!),(:?),arg)
 import Named.Internal as X (Param(..),Decide)
@@ -14,6 +15,7 @@ import qualified Named.Internal as Named
 import Church
 import Type.E
 import GHC.Prim
+import Unsafe.Coerce
 
 
 (>) :: (a -> x) -> (x -> b) -> a -> b
@@ -102,3 +104,6 @@ __ = P.undefined
 
 id :: a -> a
 id a = a
+
+coerce# :: a -> b
+coerce# = unsafeCoerce

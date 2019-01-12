@@ -197,7 +197,7 @@ instance (c (Bazaar c a b), forall f. c f => (Map f, Pure f)) => Pure (Bazaar c 
   {-promap# _ _ !p = promap coerce coerce p-}
 -- |A @Pure f@ distributes through Sum types:
 --  http://r6research.livejournal.com/28338.html
-instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero
+{-instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero-}
 
 
 type family Left t where Left (E a b) = a

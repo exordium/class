@@ -13,15 +13,15 @@ import Types
 import Fun
 {-import {-# source #-} Control-}
 
--- | A @FZero f@ is a functor with a particular empty shape singled out
+-- | A @FAdd f@ is a functor with a particular empty shape singled out
 -- Dual to 'Pure'
-class (Remap f, Zero (f X)) => FZero f where
+class (Remap f, Op (Add (f X))) => FAdd f where
   fzero :: f X
   fzero = lose (\x -> x)
   lose :: (a -> X) -> f a
   lose f = remap f absurd fzero
--- | Covariant 'FZero' can be 'empty' for any type.
-class (Map f, FZero f, forall x. Zero (f x)) => Empty f where
+-- | Covariant 'FAdd' can be 'empty' for any type.
+class (Map f, FAdd f, forall x. Op (Add (f x))) => Empty f where
   empty :: f a
   empty = map absurd fzero
 
@@ -126,7 +126,7 @@ class (MapM f f, Apply f) => Bind f where bind :: (a -> f b) -> f a -> f b
 class (Pure f, Apply f) => Applicative f
 class (Applicative f, Bind f) => Monad f 
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
-class (Lifting Zero One f, Remap f) => Pure f where
+class ({- Lifting Monoid One f, -} Remap f) => Pure f where
   fone :: f ()
   fone = pure ()
   pure :: a -> f a
@@ -157,7 +157,9 @@ instance Remap I  where remap _ f (I a) = I (f a)
 instance Strong I where strong x (I a)  = I (x,a)
 instance MapM I I where mapM f (I a) = f a
 instance Map I    where map f (I a)     = I (f a)
-instance Zero a => One (I a) where one = I zero
+deriving newtype instance Op a => Op (I a)
+deriving newtype instance Nil a => Nil (I a)
+deriving newtype instance Monoid a => Monoid (I a)
 instance Pure I where pure = I
 instance Apply I where ap (I f) (I a) = I (f a)
 instance Applicative I
@@ -176,12 +178,11 @@ instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x)
   where traverse f (x,a) = map (x,) (f a)
 
 instance Traverse IsI (K a) where traverse = map_traverse
-instance Zero a => One (K a x) where one = K zero
-instance Zero a => Pure (K a) where pure _ = K zero
-instance Add a => Apply (K a) where ap (K a) (K b) = K (add a b)
-instance Add0 a => Applicative (K a)
-instance (c ==> Map, Zero a, Map (K a)) => Distribute c (K a)
-  where distribute _ = K zero
+instance Op a => Apply (K a) where ap (K a) (K b) = K (a . b)
+instance Monoid a => Pure (K a) where pure _ = K nil -- TODO: check this vs one
+instance Monoid a => Applicative (K a)
+instance (c ==> Map, Monoid a, Map (K a)) => Distribute c (K a)
+  where distribute _ = K nil
 
 instance Map# P.IO where map# = coerce_map#
 instance Remap P.IO where remap _ = P.fmap
@@ -201,7 +202,7 @@ instance (Remap f, Remap g) => Remap (O f g)
 instance (Map f, Strong g) => Strong (O f g)
   where strong a (O fg) = O (map (strong a) fg)
 
-instance FZero [] where fzero = []
+instance FAdd [] where fzero = []
 instance Empty []
 instance Remap [] where remap _ = P.map
 instance Map# [] where map# = coerce_map#
@@ -235,8 +236,11 @@ instance Remap  (E x) where remap _ f = \case {L x -> L x; R a -> R (f a)}
 instance Strong (E x) where strong x  = \case {L x -> L x; R a -> R (x,a)}
 instance MapM I (E x) where mapM = map_mapM
 instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
-instance Zero x => Zero (E x a) where zero = L zero
-instance Zero a => One (E x a) where one = R zero
+{-instance Monoid x => FAdd (E x) where-}
+  
+{-instance Monoid x => Op (Add (E x a)) where nil = L nil-}
+{-instance Monoid x => Monoid (Add (E x a)) where nil = L nil-}
+{-instance Monoid a => Monoid (Times (E x a)) where one = R nil-}
 instance Pure (E x)   where pure = R
 instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
   traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}

@@ -71,8 +71,8 @@ class (forall x. Map (p x), Promap# p) => Promap p where
 
 -- * Closed
 class Promap p => Closed p where
-  distributed :: forall t a b. Distribute Map t => p a b -> p (t a) (t b)
-  distributed = zipping (zipWithF @Map)
+  distributed :: forall t a b. Distribute t => p a b -> p (t a) (t b)
+  distributed = zipping zipWithF
   closed :: p a b -> p (x -> a) (x -> b)
   closed = distributed
   grate :: (((s -> a) -> b) -> t) -> p a b -> p s t
@@ -154,8 +154,6 @@ instance Promap (->) where
   premap  = \f p s -> p (f s)
   postmap = \g p a -> g (p a)
 instance Promap# (->) where promap# _ _ = coerce
-instance (c ==> Map, Map ((->) x)) => Distribute c ((->) x)
-  where distribute fxa = \x -> map (\xa -> xa x) fxa
 instance Closed  (->)     where distributed = map; closed f = (f <)
 instance (c ==> Map, c I) => Traversed c (->) where
  traversed = map

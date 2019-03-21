@@ -70,9 +70,6 @@ newtype instance Def1 Pure f a = Pure (f a)
 instance Map f => Traverse Wrap (Def1 Pure f) where -- TODO: fix
   traverse = (wrap <) < map < coerce
 
-instance Pure t => Distribute IsEither (Def1 Pure t) where
-  distribute = (pure < L) ||| remap (\(R a) -> a) R
-
 -- TODO: fix
 f ||| g = \case {L a -> f a; R b -> g b}
 
@@ -103,16 +100,13 @@ class ({- Traverse Wrap f, -} Strong f, Bind I f) => Map f where
 map_traverse :: (I ~ f, Map t) => (a -> f b) -> t a -> f (t b)
 map_traverse = (I<) < map < (unI<)
 
-distribute_pure :: Distribute IsEither t => a -> t a
-distribute_pure a = (id ||| absurd) `map` distribute @IsEither (L a)
-
-class (c ==> Map, Map t) => Distribute c t where
-  distribute :: c f => f (t a) -> t (f a)
-  distribute = collect @c \ x -> x
-  zipWithF   :: c f => (f a -> b) -> f (t a) -> t b
-  zipWithF fab = \fta -> map fab (distribute @c fta)
-  collect :: c f => (a -> t b) -> f a -> t (f b)
-  collect f a = zipWithF @c (\x -> x) (map f a)
+class Map t => Distribute t where
+  distribute :: Map f => f (t a) -> t (f a)
+  distribute = collect \ x -> x
+  zipWithF   :: Map f => (f a -> b) -> f (t a) -> t b
+  zipWithF fab = \fta -> fab `map` distribute fta
+  collect :: Map f => (a -> t b) -> f a -> t (f b)
+  collect f a = zipWithF (\x -> x) (map f a)
 
 class Remap f => Strong f where
   {-# minimal strong | strengthen #-}
@@ -238,8 +232,7 @@ deriving via Def1 Phantom (K a) instance Bind f f => Bind f (K a)
 instance Semigroup a => Apply (K a) where ap (K a) (K b) = K (a . b)
 instance Monoid a => Pure (K a) where pure _ = K nil -- TODO: check this vs one
 instance Monoid a => Applicative (K a)
-instance (c ==> Map, Monoid a, Map (K a)) => Distribute c (K a)
-  where distribute _ = K nil
+instance (Monoid a) => Distribute (K a) where distribute _ = K nil
 instance Monoid a => Monad (K a)
 
 deriving via Def1 Wrap I instance Map# I
@@ -257,8 +250,7 @@ instance Semigroup a => Act (I a) (I a) where act (I a) (I b) = I (act a b)
 deriving newtype instance Nil a => Nil (I a)
 deriving newtype instance Monoid a => Monoid (I a)
 {-instance Traverse Wrap I    where traverse = map_traverse-}
-instance (c ==> Map, Map I) => Distribute c I
-  where distribute (fia :: f (I a)) = I (map# unI fia)
+instance Distribute I where distribute (fia :: f (I a)) = I (map# unI fia)
 
 
 deriving via Def1 Representational ((,) x) instance Map# ((,) x)
@@ -304,20 +296,13 @@ instance (c ==> Applicative) => Traverse c [] where
     go = \case
       [] -> pure []
       a : as -> (:) `map` f a `ap` go as
-instance Distribute IsEither [] where
-  distribute = \case {L x -> [L x]; R ts -> map R ts}
-  zipWithF fab = \case
-    L x -> [fab (L x)]
-    R ta -> map (\a -> fab (R a)) ta
-  collect atb = \case
-    L x -> [L x]
-    R a -> map R (atb a)
 
 instance Map ((->) x) where map f g = \a ->  f (g a)
 deriving via Def1 Representational ((->) x) instance Map# ((->) x)
 deriving via Def1 Map ((->) x) instance Remap ((->) x)
 deriving via Def1 Map ((->) x) instance Strong ((->) x)
 deriving via Def1 Map ((->) x) instance Bind I ((->) x)
+instance Distribute ((->) x) where distribute fxa = \x -> map ($ x) fxa
 {-instance Traverse Wrap ((->) x) where traverse = map_traverse-}
 
 deriving via Def1 Representational (E x) instance Map# (E x)
@@ -333,6 +318,4 @@ instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 instance Pure (E x)   where pure = R
 instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
   traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}
-instance Distribute IsEither (E x) where
-  distribute = \case {L y -> R (L y); R (L x) -> L x; R (R a) -> R (R a)}
 

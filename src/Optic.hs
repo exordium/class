@@ -58,7 +58,7 @@ instance Traverse IsI (Zip2 a) where traverse = map_traverse -- Warty
 instance Promap Zip2 where promap f g (Zip2 z) = Zip2 \ a a' -> g (z (f a) (f a'))
 instance Closed (Zip2) where closed (Zip2 z) = Zip2 \ xa xa' x -> z (xa x) (xa' x)
 instance Apply (Zip2 x) where ap (Zip2 xxab) (Zip2 xxa) = Zip2 \ x x' -> xxab x x' (xxa x x')
-instance Pure (Zip2 x) where pure a = Zip2 \ _ _ -> a
+instance FOne (Zip2 x) where pure a = Zip2 \ _ _ -> a
 
 _Zip2_ :: forall p a b s t. Promap# p => Zip2 a b `p` Zip2 s t -> (a -> a -> b) `p` (s -> s -> t)
 _Zip2_ = promap# Zip2 runZip2
@@ -125,13 +125,21 @@ instance (c ==> Map, c f) => Traversed c (Traversing f) where
 {-impl @Promap [t|Prism [tv|a|] [tv|b|]|]-}
   {-$$ #promap [|\f g (Prism seta bt) -> Prism (((L < g) ||| R) < seta < f) (g < bt)|]-}
 
-{-newtype View r a (b :: *) = View {runView :: a -> r}-}
-{-_View_ :: Promap# p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)-}
-{-_View_ = promap# View runView-}
+newtype View r a (b :: *) = View {runView :: a -> r}
+_View_ :: Promap# p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
+_View_ = promap# View runView
 
-{-impl @Promap [t|View [tv|r|] |] $$ #promap [|\f g (View an) -> View \ s -> an (f s)|]-}
-{-instance c m => Traversed (IsK c) (View m) where-}
-  {-traversal akmskm (View am) = View (unK < akmskm (K < am))-}
+{-impl @Promap [t|View [tv|r|] |] Impl.$$ #promap [|\f g (View an) -> View \ s -> an (f s)|]-}
+instance Map# (View r x) where map# _ = coerce
+instance Map (View r x) where map _ = coerce
+instance Remap (View r x) where remap _ _ = coerce
+instance Traverse IsI (View r x) where traverse _ = coerce
+instance Strong (View r x) where strong _ = coerce
+instance MapM I (View r x) where mapM _ = coerce
+instance Promap# (View r) where promap# _ _ = coerce
+instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
+instance c m => Traversed (IsK c) (View m) where
+  traversal akmskm (View am) = View (unK < akmskm (K < am))
 
 {-instance Traverse (IsK P.Monoid) P.Set-}
 

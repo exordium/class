@@ -25,7 +25,7 @@ import Data
 import qualified Data.Coerce as GHC
 import qualified Control.Arrow as P
 import qualified Control.Category as P
-import Functor
+import Functor hiding ((|||))
 
 class Compose p where compose :: p a b -> p b c -> p a c
 class Identity p where identity :: p a a
@@ -168,15 +168,14 @@ instance Category (->)
 
 
 
-
-deriving via (Representational_Defaults (Baz c t b)) instance Map# (Baz c t b)
-deriving via (Map_Defaults (Baz c t b)) instance MapM I (Baz c t b)
-deriving via (Map_Defaults (Baz c t b)) instance Remap (Baz c t b)
-deriving via (Map_Defaults (Baz c t b)) instance Strong (Baz c t b)
-{-deriving via (Map_Defaults (Baz c t b)) instance Traverse IsI (Baz c t b)-}
+deriving via (Def1 Representational (Baz c t b)) instance Map# (Baz c t b)
+deriving via (Def1 Map (Baz c t b)) instance Bind I (Baz c t b)
+deriving via (Def1 Map (Baz c t b)) instance Remap (Baz c t b)
+deriving via (Def1 Map (Baz c t b)) instance Strong (Baz c t b)
+{-deriving via (Def_Map (Baz c t b)) instance Traverse IsI (Baz c t b)-}
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
-instance Traverse IsI (Baz c t b) where traverse = map_traverse
+{-instance Traverse IsI (Baz c t b) where traverse = map_traverse-}
 instance (c ==> Map
          ,Map (Baz c t b)
          ,forall f b a. c f => c (O f (Bazaar c b a)))
@@ -191,7 +190,7 @@ instance (c ==> Map) => Map# (Bazaar c a b)
   where map# f (Bazaar m) = Bazaar (map# f < m)
 instance (c ==> Map) => Remap (Bazaar c a b) where
   remap _ f (Bazaar m) = Bazaar (\k -> map f (m k))
-instance (c (Bazaar c a b), forall f. c f => (Map f, Pure f)) => Pure (Bazaar c a b) where
+instance (c (Bazaar c a b), c ==> Pure, c ==> Map) => Pure (Bazaar c a b) where
   pure t = Bazaar (pure t!)
 {-instance {-# Overlappable #-} Promap p => Promap# p where-}
   {-promap# _ _ !p = promap coerce coerce p-}
@@ -232,40 +231,22 @@ p >^ f = postmap f p
 -- * Impl
 newtype Promap_Defaults (p :: * -> * -> *) a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Strong,Remap,Map#, MapM I) via (Map_Defaults (p a))
+  deriving (Strong,Remap,Map#, Bind I) via (Def1 Map (p a))
 instance Promap p => Map          (Promap_Defaults p x) where map      = postmap
-instance Promap p => Traverse IsI (Promap_Defaults p x) where traverse = map_traverse
+{-instance Promap p => Traverse IsI (Promap_Defaults p x) where traverse = map_traverse-}
 instance Promap p => Promap# (Promap_Defaults p) where
   promap# _ _ !p = promap coerce coerce p
   premap# _ !p = premap coerce p
   postmap# _ !p = postmap coerce p
 
-newtype Traverse_Defaults t (a :: *) = Traverse (t a)
-  deriving (Map#, Strong, Remap, MapM I) via (Map_Defaults t)
-instance (c ==> Map#, Traverse c t) => Traverse c (Traverse_Defaults t)
-  where traverse f (Traverse t) = map# Traverse (traverse @c f t)
-instance Traverse IsI t => Map (Traverse_Defaults t)
-  where map f = unI < traverse @IsI (I < f) 
-
-
-newtype Map_Defaults f a = Map (f a)
-  deriving newtype Map
-  deriving Map# via (Remap_Defaults f)
-instance Map f => MapM I       (Map_Defaults f) where mapM     = map_mapM
-instance Map f => Strong       (Map_Defaults f) where strong a = map (a,)
-instance Map f => Remap        (Map_Defaults f) where remap _  = map
-instance Map f => Traverse IsI (Map_Defaults f) where traverse = map_traverse
-
-newtype Remap_Defaults f a = Remap (f a) deriving newtype Remap
-instance Remap f => Map# (Remap_Defaults f) where map# = remap_map#
-
-newtype Representational_Defaults f a = Representational (f a)
-instance Representational f => Map# (Representational_Defaults f) where map# = coerce_map#
 
 
 
-{-instance MapM I (Baz c t b) where mapM = map_mapM-}
-{-deriving via (Promap_Defaults (Baz c t) b) instance Promap (Baz c t) => MapM I (Baz c t b)-}
+
+
+
+{-instance Bind I (Baz c t b) where bind = map_bind-}
+{-deriving via (Promap_Defaults (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
 
 
 {-instance Impl Promap where-}

@@ -42,7 +42,8 @@ f $ a = f a
 ($!) f !a = f a
 infixl 1 $, $!, $$, $., &
 
-(!) a = \_ -> a; {-# INLINE (!) #-}
+(!) :: a -> b -> a
+(!) = P.const; {-# inline (!) #-}
 (!!) = seq; {-# INLINE (!!) #-}
 
 a & f = f a

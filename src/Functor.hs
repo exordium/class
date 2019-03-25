@@ -12,6 +12,7 @@ import qualified Prelude as P
 import Types
 import Fun
 {-import {-# source #-} Control-}
+import qualified Data.Set as PS
 
 -- | A @FAdd f@ is a functor with a particular empty shape singled out
 -- Dual to 'Pure'
@@ -25,10 +26,9 @@ import Fun
   {-empty :: f a-}
   {-empty = map absurd fzero-}
 
--- | A functor over a particular kliesli category
-class Bind m m => Bind m f where
-  bind :: (a -> m b) -> f a -> f b
-  join :: f (m a) -> f a
+class Bind m where
+  bind :: (a -> m b) -> m a -> m b
+  join :: m (m a) -> m a
   join = bind \ x -> x
 
 data family Def1 (c :: (* -> *) -> Constraint) (f :: * -> *) :: * -> *
@@ -36,7 +36,6 @@ newtype instance Def1 Remap f a = Remap (f a) deriving newtype Remap
 instance Remap f => Map# (Def1 Remap f) where map# f !x = remap coerce f x
 
 newtype instance Def1 Map f a = Map (f a) deriving newtype Map
-instance Map f => Bind I (Def1 Map f) where bind = map < coerce
 instance Map f => Traverse Wrap (Def1 Map f) where traverse = (wrap <) < map < (unwrap<)
 instance Map f => Strong (Def1 Map f) where strong a = map (a,)
 instance Map f => Remap (Def1 Map f) where remap _ = map
@@ -51,11 +50,12 @@ instance Phantom f => Map (Def1 Phantom f) where map _ = coerce
 instance Phantom f => Map# (Def1 Phantom f) where map# _ = coerce
 instance Phantom f => Remap (Def1 Phantom f) where remap _ _ = coerce
 instance Phantom f => Strong (Def1 Phantom f) where strong _ = coerce
-instance (Bind m m, Phantom f) => Bind m (Def1 Phantom f) where bind _ = coerce
+instance Phantom f => Bind (Def1 Phantom f) where bind _ = coerce
+{-instance (Bind m, Phantom f) => Bind m (Def1 Phantom f) where bind _ = coerce-}
 
 
 newtype instance Def1 (Traverse c) t a = Traverse (t a)
-  deriving (Map#, Strong, Remap, Bind I) via (Def1 Map t)
+  deriving (Map#, Strong, Remap) via (Def1 Map t)
 {-instance (Map (Def1 (Traverse c) t), c ==> Map#, Traverse c t) => Traverse c (Def1 (Traverse c) t)-}
   {-where traverse f (Traverse t) = map# Traverse (traverse @c f t)-}
 {-instance (c ==> Wrap, Traverse c t) => Map (Def1 (Traverse c) t)-}
@@ -65,7 +65,7 @@ newtype instance Def1 (Traverse c) t a = Traverse (t a)
 
 newtype instance Def1 Pure f a = Pure (f a)
   deriving newtype (Pure,Map)
-  deriving (Remap,Map#,Strong, Bind I) via Def1 Map f
+  deriving (Remap,Map#,Strong) via Def1 Map f
 
 instance Map f => Traverse Wrap (Def1 Pure f) where -- TODO: fix
   traverse = (wrap <) < map < coerce
@@ -75,7 +75,7 @@ f ||| g = \case {L a -> f a; R b -> g b}
 
 newtype instance Def1 Applicative f a = Applicative (f a)
   deriving newtype (Applicative,Pure,Apply)
-  deriving (Remap,Map#,Strong,Bind I) via Def1 Map f
+  deriving (Remap,Map#,Strong) via Def1 Map f
 
 instance Applicative f => Map (Def1 Applicative f) where map = ap < pure
 
@@ -88,7 +88,7 @@ instance Applicative f => Map (Def1 Applicative f) where map = ap < pure
   {-filter f = bind (\a -> case f a of False -> Nothing; True -> Just a)-}
 
 
-class ({- Traverse Wrap f, -} Strong f, Bind I f) => Map f where
+class ({- Traverse Wrap f, -} Strong f) => Map f where
   map :: (a -> b) -> f a -> f b
   constMap :: b -> f a -> f b
   constMap b = map \ _ -> b
@@ -163,9 +163,9 @@ for t f = traverse @Applicative f t
 (@@) :: (Traverse Applicative t,Applicative f) => t a -> (a -> f b) -> f (t b)
 (@@) = for
 
-class Apply f where ap :: f (a -> b) -> f a -> f b
+class Map f => Apply f where ap :: f (a -> b) -> f a -> f b
 class (Map f, Pure f, Apply f) => Applicative f
-class (Applicative m, Bind m m) => Monad m
+class (Applicative m, Bind m) => Monad m
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
 -- Technically only @Remap@ is necessary, but @Map@ included for convenience
 -- to prevent breaking up @Distribute@'s @zipWithF@
@@ -188,19 +188,19 @@ newtype instance Def1 Wrap f a = Wrap (f a)
 instance Wrap f => Pure (Def1 Wrap f) where pure = coerce
 instance Wrap f => Apply (Def1 Wrap f) where ap fab fa = wrap ((unwrap fab) (unwrap fa))
 instance Wrap f => Applicative (Def1 Wrap f)
-instance Wrap f => Bind (Def1 Wrap f) (Def1 Wrap f) where bind = coerce
+instance Wrap f => Bind (Def1 Wrap f) where bind = coerce
 instance Wrap f => Monad (Def1 Wrap f)
 instance Wrap f => Map (Def1 Wrap f) where map = coerce
 deriving via Def1 Representational f instance Representational f => Map# (Def1 Wrap f)
 deriving via Def1 Map f instance Wrap f => Strong (Def1 Wrap f)
 deriving via Def1 Map f instance Wrap f => Remap (Def1 Wrap f)
-deriving via Def1 Map f instance Wrap f => Bind I (Def1 Wrap f)
 
-newtype instance Def1 (Bind m) f a = Bind (f a)
-  deriving newtype (Bind m)
+newtype instance Def1 Bind m a = Bind (m a) 
+  {-deriving newtype Bind-}
+
   {-deriving (Bind I, Map#,Remap,Strong) via Def1 Map (Def1 Bind m) -}
 {-instance Bind m => Map (Def1 Bind m) where map f (Bind ma) = Bind (map f ma)-}
-instance Bind m m => Bind (Def1 (Bind m) m) (Def1 (Bind m) m) where
+instance Bind m => Bind (Def1 Bind m) where
   bind f (Bind m) = Bind (bind (\(f -> Bind b) -> b) m)
 {-instance Bind m => Apply (Def1 Bind m) ap where-}
   {-ap fab fa = bind pure-}
@@ -226,7 +226,7 @@ deriving via Def1 Phantom (K a) instance Map (K a)
 deriving via Def1 Phantom (K a) instance Map# (K a)
 deriving via Def1 Phantom (K a) instance Remap (K a)
 deriving via Def1 Phantom (K a) instance Strong (K a)
-deriving via Def1 Phantom (K a) instance Bind f f => Bind f (K a)
+deriving via Def1 Phantom (K a) instance Bind (K a)
 
 {-instance Traverse Wrap (K a) where traverse = map_traverse-}
 instance Semigroup a => Apply (K a) where ap (K a) (K b) = K (a . b)
@@ -238,11 +238,12 @@ instance Monoid a => Monad (K a)
 deriving via Def1 Wrap I instance Map# I
 deriving via Def1 Wrap I instance Remap I
 deriving via Def1 Wrap I instance Strong I
-deriving via Def1 Wrap I instance (Bind I) I
+{-deriving via Def1 Wrap I instance Bind I-}
 deriving via Def1 Wrap I instance Map I
 deriving via Def1 Wrap I instance Pure I
 deriving via Def1 Wrap I instance Apply I
 deriving via Def1 Wrap I instance Applicative I
+deriving via Def1 Wrap I instance Bind I
 deriving via Def1 Wrap I instance Monad I
 
 deriving newtype instance Semigroup a => Semigroup (I a)
@@ -256,7 +257,6 @@ instance Distribute I where distribute (fia :: f (I a)) = I (map# unI fia)
 deriving via Def1 Representational ((,) x) instance Map# ((,) x)
 deriving via Def1 Map ((,) x) instance Remap ((,) x)
 deriving via Def1 Map ((,) x) instance Strong ((,) x)
-deriving via Def1 Map ((,) x) instance Bind I ((,) x)
 {-deriving via Def1 (Traverse Map) ((,) x) instance Map ((,) x)-}
 
 instance Map ((,) x)    where map f (x,a)     = (x, f a)
@@ -264,15 +264,12 @@ instance (c ==> Map, Map ((,) x)) => Traverse c ((,) x)
   where traverse f (x,a) = map (x,) (f a)
 
 
-deriving via Def1 Map P.IO instance Bind I P.IO
 deriving via Def1 Map P.IO instance Remap P.IO
 deriving via Def1 Map P.IO instance Strong P.IO
 deriving via Def1 Representational P.IO instance Map# P.IO
 instance Map P.IO where map = P.fmap
 {-instance Traverse Wrap P.IO where traverse = map_traverse-}
 
-instance (Bind I f, Bind I g) => Bind I (O f g)
-  where bind f (O fg) = O (bind (I < bind f) fg)
 instance (Map f, Map g) => Map (O f g)
   where map f (O fg) = O (map (map f) fg)
 {-instance (Map f, Map g) => Traverse Wrap (O f g) where traverse = map_traverse-}
@@ -287,7 +284,6 @@ instance (Map f, Strong g) => Strong (O f g)
 deriving via Def1 Representational [] instance Map# []
 deriving via Def1 Map [] instance Remap []
 deriving via Def1 Map [] instance Strong []
-deriving via Def1 Map [] instance Bind I []
 {-deriving via Def1 (Traverse Wrap) [] instance Map []-}
 instance Map [] where map = P.map
 instance Pure [] where pure a = [a]
@@ -301,14 +297,12 @@ instance Map ((->) x) where map f g = \a ->  f (g a)
 deriving via Def1 Representational ((->) x) instance Map# ((->) x)
 deriving via Def1 Map ((->) x) instance Remap ((->) x)
 deriving via Def1 Map ((->) x) instance Strong ((->) x)
-deriving via Def1 Map ((->) x) instance Bind I ((->) x)
 instance Distribute ((->) x) where distribute fxa = \x -> map ($ x) fxa
 {-instance Traverse Wrap ((->) x) where traverse = map_traverse-}
 
 deriving via Def1 Representational (E x) instance Map# (E x)
 deriving via Def1 Map (E x) instance Remap (E x)
 deriving via Def1 Map (E x) instance Strong (E x)
-deriving via Def1 Map (E x) instance Bind I (E x)
 instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 {-instance Monoid x => FAdd (E x) where-}
   
@@ -318,4 +312,3 @@ instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 instance Pure (E x)   where pure = R
 instance (forall f. c f => (Pure f, Map f)) => Traverse c (E x) where
   traverse afb = \case {L x -> pure (L x); R a -> map R (afb a)}
-

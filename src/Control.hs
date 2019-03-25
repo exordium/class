@@ -167,7 +167,6 @@ instance Category (->)
 
 
 deriving via (Def1 Representational (Baz c t b)) instance Map# (Baz c t b)
-deriving via (Def1 Map (Baz c t b)) instance Bind I (Baz c t b)
 deriving via (Def1 Map (Baz c t b)) instance Remap (Baz c t b)
 deriving via (Def1 Map (Baz c t b)) instance Strong (Baz c t b)
 {-deriving via (Def_Map (Baz c t b)) instance Traverse IsI (Baz c t b)-}
@@ -229,16 +228,13 @@ p >^ f = postmap f p
 -- * Impl
 newtype Promap_Defaults (p :: * -> * -> *) a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Strong,Remap,Map#, Bind I) via (Def1 Map (p a))
+  deriving (Strong,Remap,Map#) via (Def1 Map (p a))
 instance Promap p => Map          (Promap_Defaults p x) where map      = postmap
 {-instance Promap p => Traverse IsI (Promap_Defaults p x) where traverse = map_traverse-}
 instance Promap p => Promap# (Promap_Defaults p) where
   promap# _ _ !p = promap coerce coerce p
   premap# _ !p = premap coerce p
   postmap# _ !p = postmap coerce p
-
-
-
 
 
 

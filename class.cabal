@@ -17,7 +17,7 @@ source-repository head
 
 common x
   default-language: Haskell2010
-  default-extensions: DataKinds,NoImplicitPrelude,ViewPatterns,PatternSynonyms,RankNTypes,BlockArguments, KindSignatures, PolyKinds, QuantifiedConstraints, GADTs, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, TupleSections, LambdaCase, ConstraintKinds, TypeFamilies, AllowAmbiguousTypes, TypeOperators, OverloadedLabels, ScopedTypeVariables, TypeApplications, BangPatterns, GeneralizedNewtypeDeriving, DeriveAnyClass, DerivingStrategies, DerivingVia, StandaloneDeriving, FunctionalDependencies, DefaultSignatures, MultiWayIf, UndecidableInstances
+  default-extensions: DataKinds,NoImplicitPrelude,ViewPatterns,PatternSynonyms,RankNTypes,BlockArguments, KindSignatures, PolyKinds, QuantifiedConstraints, GADTs, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, TupleSections, LambdaCase, ConstraintKinds, TypeFamilies, AllowAmbiguousTypes, TypeOperators, OverloadedLabels, ScopedTypeVariables, TypeApplications, BangPatterns, GeneralizedNewtypeDeriving, DeriveAnyClass, DerivingStrategies, DerivingVia, StandaloneDeriving, FunctionalDependencies, DefaultSignatures, MultiWayIf, UndecidableInstances, TypeFamilyDependencies
 
 library
   import: x

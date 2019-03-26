@@ -31,7 +31,7 @@ class Bind m where
   join :: m (m a) -> m a
   join = bind \ x -> x
 
-data family Def1 (c :: (* -> *) -> Constraint) (f :: * -> *) :: * -> *
+data family Def1 (c :: (* -> *) -> Constraint) :: (* -> *) -> * -> *
 newtype instance Def1 Remap f a = Remap (f a) deriving newtype Remap
 instance Remap f => Map# (Def1 Remap f) where map# f !x = remap coerce f x
 
@@ -42,7 +42,7 @@ instance Map f => Remap (Def1 Map f) where remap _ = map
 instance Map f => Map# (Def1 Map f) where map# _ !x = map coerce x
 
 newtype instance Def1 Representational f a = Representational (f a)
-instance Representational f => Map# (Def1 Representational f) where map# = coerce_map#
+instance Representational f => Map# (Def1 Representational f) where map# _ = coerce
 
 newtype instance Def1 Phantom f a = Phantom (f a)
 
@@ -147,8 +147,6 @@ class Map# f where map# :: a =# b => (a -> b) -> f a -> f b
 class Map# f => Remap f where remap :: (b -> a) -> (a -> b) -> f a -> f b
 remap_map# :: (Remap f, a =# b) => (a -> b) -> f a -> f b
 remap_map# f !x = remap coerce f x
-coerce_map# :: (Representational f, a =# b) => (a -> b) -> f a -> f b
-coerce_map# _ = coerce
 (#@) :: (Map# f, a =# b) => (a -> b) -> f a -> f b
 (#@) = map#
 

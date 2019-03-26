@@ -225,22 +225,36 @@ p >^ f = postmap f p
 (^<) :: Promap p => (b -> t) -> p x b -> p x t
 (^<) = postmap
 
--- * Impl
-newtype Promap_Defaults (p :: * -> * -> *) a b = Promap (p a b)
+data family Def2 (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
+
+newtype instance Def2 Promap p a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Strong,Remap,Map#) via (Def1 Map (p a))
-instance Promap p => Map          (Promap_Defaults p x) where map      = postmap
-{-instance Promap p => Traverse IsI (Promap_Defaults p x) where traverse = map_traverse-}
-instance Promap p => Promap# (Promap_Defaults p) where
+  deriving (Strong,Remap,Map#) via Def2 Promap p a
+instance Promap p => Map (Def2 Promap p a) where map f (Promap p) = Promap (postmap f p)
+instance Promap p => Promap# (Def2 Promap p) where
   promap# _ _ !p = promap coerce coerce p
   premap# _ !p = premap coerce p
   postmap# _ !p = postmap coerce p
+
+newtype instance Def2 Promap# p a b = Promap# (p a b)
+  deriving newtype Promap#
+instance Promap# p => Map# (Def2 Promap# p a) where
+  map# f (Promap# p) = Promap# (postmap# f p)
+
+newtype instance Def2 Representational2 p a b = Representational2 (p a b)
+  deriving Map# via Def2 Promap# p a
+instance Representational2 p => Promap# (Def2 Representational2 p)
+  where promap#  _ _ = coerce
+
+{-newtype Ar a b = Ar (a -> b)-}
+  {-deriving newtype (Promap, Promap#, Map#)-}
+  {-deriving (Map) via Def2 Promap Ar a-}
 
 
 
 
 {-instance Bind I (Baz c t b) where bind = map_bind-}
-{-deriving via (Promap_Defaults (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
+{-deriving via (Def2 Promap (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
 
 
 {-instance Impl Promap where-}

@@ -80,10 +80,10 @@ class Promap p => Closed p where
   zipping :: (forall f. Map f => (f a -> b) -> f s -> t) -> p a b -> p s t
   zipping sabsst = grate (`sabsst` \ s -> s)
 
-type Fold c = Traverse (IsK c)
+type Fold c = TraverseC (IsK c)
 
 foldMap :: forall c t a m. (Fold c t, c m) => (a -> m) -> t a -> m
-foldMap am = unK < traverse @(IsK c) (K < am)
+foldMap am = unK < traverseC @(IsK c) (K < am)
 
 for_ :: forall c t a m. (Fold c t, c m) => t a -> (a -> m) -> m
 for_ s am = foldMap @c am s
@@ -96,31 +96,32 @@ for_ s am = foldMap @c am s
 {-(*/) = for_ @Mul1-}
 
 
-cocollect :: forall c f t a b. (Traverse c t, c ==> Map, c f)
+cocollect :: forall c f t a b. (TraverseC c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
-type Mapped = Traversed ((~) I)
+type Mapped = TraversedC ((~) I)
 
-class (Promap p, c ==> Map) => Traversed (c :: (* -> *) -> Constraint) p where
-  traversed :: Traverse c t => p a b -> p (t a) (t b)
-  traversed = traversal @c (traverse @c)
+class (Promap p, forall cc. (c ==> cc) => TraversedC cc p)
+  => TraversedC (c :: (* -> *) -> Constraint) p where
+  traversedC :: TraverseC c t => p a b -> p (t a) (t b)
+  traversedC = traversal @c (traverseC @c)
   traversal :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
-  default traversal :: (forall ff bb aa. c ff => c (O ff (Bazaar c bb aa))
-                       ,c I , c (Baz c t b))
-                    => (forall f. c f => (a -> f b) -> s -> f t)
-                    -> p a b -> p s t
-  traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed @c pab)
+  {-default traversal :: (forall ff bb aa. c ff => c (O ff (Bazaar c bb aa))-}
+                       {-,c I , c (Baz c t b))-}
+                    {-=> (forall f. c f => (a -> f b) -> s -> f t)-}
+                    {--> p a b -> p s t-}
+  {-traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversedC @c pab)-}
 
-class Traversed Map p => Lensed p where
+class TraversedC Map p => Lensed p where
   lens :: (s -> a) -> (s -> b -> t) -> p a b -> p s t
   lens get set = traversal @Map \ afb s -> set s `map` afb (get s)
   _2 :: p a b -> p (x,a) (x,b)
-  _2 = traversed @Map
+  _2 = traversedC @Map
   _1 :: p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
-folding :: forall c p a s b t. Traversed (IsK c) p
+folding :: forall c p a s b t. TraversedC (IsK c) p
         => (forall m. c m => (a -> m) -> s -> m) -> p a b -> p s t
 folding amsm = traversal @(IsK c) (\akm s -> K (amsm (unK < akm) s))
 
@@ -147,6 +148,9 @@ class Prismed p => Precoerce p where
 class ((forall x y a b . (a =# x,y =# b) => p x y =# p a b),Promap# p) => Representational2 p
 instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), Promap# p)=> Representational2 p
 
+class (Applicative f, Distribute f) => IsI f
+instance (Applicative f, Distribute f) => IsI f
+
 -- * Instances
 
 instance Promap (->) where
@@ -155,8 +159,8 @@ instance Promap (->) where
   postmap = \g p a -> g (p a)
 instance Promap# (->) where promap# _ _ = coerce
 instance Closed  (->)     where distributed = map; closed f = (f <)
-instance (c ==> Map, c I) => Traversed c (->) where
- traversed = map
+instance (((~) I) ==> c) => TraversedC c (->) where
+ traversedC = map
  traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
 instance Prismed (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}
 instance Lensed (->)
@@ -168,27 +172,42 @@ instance Category (->)
 
 deriving via (Representational # Baz c t b) instance Map# (Baz c t b)
 deriving via (Map # Baz c t b) instance Remap (Baz c t b)
-deriving via (Map # Baz c t b) instance Strong (Baz c t b)
-{-deriving via (Def_Map (Baz c t b)) instance Traverse IsI (Baz c t b)-}
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
-{-instance Traverse IsI (Baz c t b) where traverse = map_traverse-}
-instance (c ==> Map
-         ,Map (Baz c t b)
-         ,forall f b a. c f => c (O f (Bazaar c b a)))
-  => Traverse c (Baz c t b) where
-     traverse f (Baz bz) = map Baz_ (unO (bz (\x -> O (map (sell @c) (f x)))))
+class (Map f, Comap f) => IsKK f
+instance  (Map f, Comap f) => IsKK f
+
+{-instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)-}
+instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)
+  => TraverseC c (Baz c t b) where
+     traverseC f (Baz bz) = map# Baz_ (unO (bz (\x -> O (remap buy (sell @c) (f x)))))
+
+data A; data B
+class C a
 
 instance (c ==> Map, c (Bazaar c a b)) => Map (Bazaar c a b) where
-  map f (Bazaar m) = Bazaar (map f < m) 
-instance (forall f. c f => Map f) => Strong (Bazaar c a b) where
-  strong a = \(Bazaar m) -> Bazaar (\k -> map (a,) (m k))
-instance (c ==> Map) => Map# (Bazaar c a b)
+  map f (Bazaar m) = Bazaar (\afb -> map f (m afb))
+  {-map f (Bazaar m) = Bazaar (map f < m)-}
+instance c ==> Map# => Map# (Bazaar c a b)
   where map# f (Bazaar m) = Bazaar (map# f < m)
-instance (c ==> Map) => Remap (Bazaar c a b) where
-  remap _ f (Bazaar m) = Bazaar (\k -> map f (m k))
-instance (c (Bazaar c a b), c ==> Pure, c ==> Map) => Pure (Bazaar c a b) where
+instance c ==> Remap => Remap (Bazaar c a b) where
+  remap f g (Bazaar m) = Bazaar (\k -> remap f g (m k))
+instance (c (Bazaar c a b), c ==> Pure) => Pure (Bazaar c a b) where
   pure t = Bazaar (pure t!)
+
+instance (c (Bazaar c a b), c ==> Apply) => Apply (Bazaar c a b) where
+  ap (Bazaar afbfxy) (Bazaar afbfx) = Bazaar \ afb -> afbfxy afb `ap` afbfx afb
+instance (c (Bazaar c a b), c ==> Applicative) => Applicative (Bazaar c a b)
+instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where
+  bind abz (Bazaar xmyma) = Bazaar \ xmy ->
+    (`bind` xmyma xmy) \ a -> case abz a of Bazaar xmymb -> xmymb xmy
+
+{-instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where-}
+  {-traverseC afb (Bazaar agyga) = -}
+
+    
+
+
 {-instance {-# Overlappable #-} Promap p => Promap# p where-}
   {-promap# _ _ !p = promap coerce coerce p-}
 -- |A @Pure f@ distributes through Sum types:
@@ -229,7 +248,7 @@ data family (##) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -
 
 newtype instance (Promap ## p) a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Strong,Remap,Map#) via (Promap ## p) a
+  deriving (Remap,Map#) via (Promap ## p) a
 instance Promap p => Map ((Promap ## p) a) where map f (Promap p) = Promap (postmap f p)
 instance Promap p => Promap# (Promap ## p) where
   promap# _ _ !p = promap coerce coerce p
@@ -264,7 +283,7 @@ instance Representational2 p => Promap# (Representational2 ## p)
     {-instance Premap  $p where premap f = $promap f \ x -> x-}
     {-instance Postmap $p where postmap  = $promap \ x -> x-}
     {-instance Map    ($p [tv|x|]) where map      = postmap-}
-    {-instance Traverse IsI ($p [tv|x|]) where traverse = map_traverse-}
+    {-instance TraverseC IsI ($p [tv|x|]) where traverseC = map_traverseC-}
     {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
     {-instance Remap  ($p [tv|x|]) where remap _  = map-}
     {-instance Map#  ($p [tv|x|]) where map# = remap_map#-}

@@ -170,8 +170,8 @@ instance Category (->)
 
 
 
-deriving via (Representational # Baz c t b) instance Map# (Baz c t b)
-deriving via (Map # Baz c t b) instance Remap (Baz c t b)
+deriving via (Representational ## Baz c t b) instance Map# (Baz c t b)
+deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 class (Map f, Comap f) => IsKK f
@@ -244,36 +244,36 @@ p >^ f = postmap f p
 (^<) :: Promap p => (b -> t) -> p x b -> p x t
 (^<) = postmap
 
-data family (##) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
+data family (###) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
 
-newtype instance (Promap ## p) a b = Promap (p a b)
+newtype instance (Promap ### p) a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Remap,Map#) via (Promap ## p) a
-instance Promap p => Map ((Promap ## p) a) where map f (Promap p) = Promap (postmap f p)
-instance Promap p => Promap# (Promap ## p) where
+  deriving (Remap,Map#) via (Promap ### p) a
+instance Promap p => Map ((Promap ### p) a) where map f (Promap p) = Promap (postmap f p)
+instance Promap p => Promap# (Promap ### p) where
   promap# _ _ !p = promap coerce coerce p
   premap# _ !p = premap coerce p
   postmap# _ !p = postmap coerce p
 
-newtype instance (Promap# ## p) a b = Promap# (p a b)
+newtype instance (Promap# ### p) a b = Promap# (p a b)
   deriving newtype Promap#
-instance Promap# p => Map# ((Promap# ## p) a) where
+instance Promap# p => Map# ((Promap# ### p) a) where
   map# f (Promap# p) = Promap# (postmap# f p)
 
-newtype instance (Representational2 ## p) a b = Representational2 (p a b)
-  deriving Map# via (Promap# ## p) a
-instance Representational2 p => Promap# (Representational2 ## p)
+newtype instance (Representational2 ### p) a b = Representational2 (p a b)
+  deriving Map# via (Promap# ### p) a
+instance Representational2 p => Promap# (Representational2 ### p)
   where promap#  _ _ = coerce
 
 {-newtype Ar a b = Ar (a -> b)-}
   {-deriving newtype (Promap, Promap#, Map#)-}
-  {-deriving (Map) via Promap ## Ar a-}
+  {-deriving (Map) via Promap ### Ar a-}
 
 
 
 
 {-instance Bind I (Baz c t b) where bind = map_bind-}
-{-deriving via (Promap ## (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
+{-deriving via (Promap ### (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
 
 
 {-instance Impl Promap where-}

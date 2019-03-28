@@ -27,45 +27,46 @@ import qualified Data.Set as PS
   {-empty = map absurd fzero-}
 
 
-data family (#) (c :: (* -> *) -> Constraint) :: (* -> *) -> * -> *
-newtype instance (Remap # f) a = Remap (f a) deriving newtype Remap
-instance Remap f => Map# (Remap # f) where map# f !x = remap coerce f x
+data family (##) (c :: (* -> *) -> Constraint) :: (* -> *) -> * -> *
+newtype instance (Remap ## f) a = Remap (f a) deriving newtype Remap
+instance Remap f => Map# (Remap ## f) where map# f !x = remap coerce f x
 
-newtype instance (Map # f) a = Map (f a) deriving newtype Map
-{-instance Map f => TraverseC Wrap (Map # f) where traverseC = (wrap <) < map < (unwrap<)-}
-instance Map f => Remap (Map # f) where remap _ = map
-instance Map f => Map# (Map # f) where map# _ !x = map coerce x
+newtype instance (Map ## f) a = Map (f a) deriving newtype Map
+{-instance Map f => TraverseC Wrap (Map ## f) where traverseC = (wrap <) < map < (unwrap<)-}
+instance Map f => Remap (Map ## f) where remap _ = map
+instance Map f => Map# (Map ## f) where map# _ !x = map coerce x
 
-newtype instance (Representational # f) a = Representational (f a)
-instance Representational f => Map# (Representational # f) where map# _ = coerce
+newtype instance (Representational ## f) a = Representational (f a)
+instance Representational f => Map# (Representational ## f) where map# _ = coerce
 
-newtype instance (Phantom # f) a = Phantom (f a)
+newtype instance (Phantom ## f) a = Phantom (f a)
 
-instance Phantom f => Map (Phantom # f) where map _ = coerce
-instance Phantom f => Map# (Phantom # f) where map# _ = coerce
-instance Phantom f => Remap (Phantom # f) where remap _ _ = coerce
-{-instance (Bind m, Phantom f) => Bind m (Phantom # f) where bind _ = coerce-}
+instance Phantom f => Map (Phantom ## f) where map _ = coerce
+instance Phantom f => Map# (Phantom ## f) where map# _ = coerce
+instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
+{-instance (Bind m, Phantom f) => Bind m (Phantom ## f) where bind _ = coerce-}
 phantom_traverseC :: (Phantom t, c ==> Pure, c f) => (a -> f b) -> t a -> f (t b)
 phantom_traverseC _ = pure < phantom
 -- Doesn't actually work because deriving via can't get under @f@, use above instead
-instance (Phantom f, c ==> Pure) => TraverseC c (Phantom # f) where
+instance (Phantom f, c ==> Pure) => TraverseC c (Phantom ## f) where
   traverseC f (Phantom k) = (pure < Phantom < phantom) k
 
-newtype instance (Pure # f) a = Pure (f a)
+newtype instance (Pure ## f) a = Pure (f a)
   deriving newtype (Pure,Map)
-  deriving (Remap,Map#) via Map # f
+  deriving (Remap,Map#) via Map ## f
 
-{-instance Map f => TraverseC Wrap (Pure # f) where -- TODO: fix-}
+{-instance Map f => TraverseC Wrap (Pure ## f) where -- TODO: fix-}
   {-traverseC = (wrap <) < map < coerce-}
 
 -- TODO: fix
 f ||| g = \case {L a -> f a; R b -> g b}
 
-newtype instance (Applicative # f) a = Applicative (f a)
+newtype instance (Applicative ## f) a = Applicative (f a)
   deriving newtype (Applicative,Pure,Apply)
-  deriving (Remap,Map#) via Map # f
+  deriving FTimes via Apply ## f
+  deriving (Remap,Map#) via Map ## f
 
-instance Applicative f => Map (Applicative # f) where map = ap < pure
+instance Applicative f => Map (Applicative ## f) where map = ap < pure
 
 
 -- | 
@@ -117,10 +118,8 @@ representational :: forall b a f. (a =# b, Representational f) => f a -> f b
 representational = GHC.coerce
 
 -- | 'Phantom' types can ignore their type parameter. Instances are automatically provided by GHC
-class    ((forall x y. f x =# f y)
-         ,(forall c. c ==> Pure => TraverseC c f)) => Phantom f
-instance ((forall x y. f x =# f y)
-         ,(forall c. c ==> Pure => TraverseC c f)) => Phantom f
+class    (forall x y. f x =# f y) => Phantom f
+instance (forall x y. f x =# f y) => Phantom f
 phantom :: forall b a f. Phantom f => f a -> f b
 phantom = GHC.coerce @(f a) @(f b); {-# INLINE phantom #-}
 
@@ -156,7 +155,12 @@ for_ t f = traverseC @Map f t
 
 
 
-class Map f => Apply f where ap :: f (a -> b) -> f a -> f b
+class (FTimes f, Map f) => Apply f where ap :: f (a -> b) -> f a -> f b
+newtype instance (Apply ## f) a = Apply (f a)
+  deriving newtype (Apply, Map)
+  deriving (Remap,Map#) via Map ## (Apply ## f)
+instance Apply f => FTimes (Apply ## f) where (|*|) = ap < map (,)
+
 class (Map f, Pure f, Apply f) => Applicative f
 class Applicative m => Monad m where bind :: (a -> m b) -> m a -> m b
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
@@ -178,10 +182,11 @@ wrap = coerce
 unwrap :: Wrap f => f a -> a
 unwrap = coerce
 
-newtype instance (Monad # m) a = Monad (m a)
+newtype instance (Monad ## m) a = Monad (m a)
   deriving newtype (Monad, Applicative, Pure)
-  deriving (Map#,Map, Remap) via Map # (Monad # m) 
-instance Monad m => Apply (Monad # m) where
+  deriving FTimes via Apply ## (Monad ## m)
+  deriving (Map#,Map, Remap) via Map ## (Monad ## m) 
+instance Monad m => Apply (Monad ## m) where
   ap (Monad mab) (Monad ma) = Monad ((`bind` mab) \ ab -> (`bind` ma) (pure < (ab $)))
 {-instance Monad m => Bind (Monad # m) where -}
 
@@ -193,14 +198,15 @@ type family LeftF t where LeftF (E a) = a
 class (Map f, f ~ E (LeftF f)) => IsEither f
 instance IsEither (E a)
 
-deriving via Phantom # (K a) instance Map (K a)
-deriving via Phantom # (K a) instance Map# (K a)
-deriving via Phantom # (K a) instance Remap (K a)
+deriving via Phantom ## (K a) instance Map (K a)
+deriving via Phantom ## (K a) instance Map# (K a)
+deriving via Phantom ## (K a) instance Remap (K a)
 instance c ==> Pure => TraverseC c (K a) where traverseC _ (K a) = pure (K a)
 
 map_traverseC :: (I ~ f, Map t) => (a -> f b) -> t a -> f (t b)
 map_traverseC = (I<) < map < (unI<)
 instance Semigroup a => Apply (K a) where ap (K a) (K b) = K (a . b)
+deriving via Apply ## K a instance Semigroup a => FTimes (K a)
 instance Monoid a => Pure (K a) where pure _ = K nil -- TODO: check this vs one
 instance Monoid a => Applicative (K a)
 instance Monoid a => Distribute (K a) where distribute _ = K nil
@@ -208,14 +214,14 @@ instance Monoid a => Monad (K a) where bind _ = coerce
 
 instance Pure I where pure = I
 instance Apply I where ap = coerce
+deriving via Apply ## I instance FTimes I
 instance Applicative I
 instance Monad I where bind = coerce
 instance Map I where map = coerce
-deriving via Representational # I instance Map# I
-deriving via Map # I instance Remap I
+deriving via Representational ## I instance Map# I
+deriving via Map ## I instance Remap I
 instance c ==> Map# => TraverseC c I where traverseC f (I a) = map# I (f a)
 
-newtype II a = II a deriving (Monad,Applicative,Apply,Pure,Map,Map#,Remap) via I
 
 
 deriving newtype instance Semigroup a => Semigroup (I a)
@@ -226,33 +232,34 @@ deriving newtype instance Monoid a => Monoid (I a)
 instance Distribute I where distribute (fia :: f (I a)) = I (map# unI fia)
 
 
-deriving via Representational # ((,) x) instance Map# ((,) x)
-deriving via Map # ((,) x) instance Remap ((,) x)
+deriving via Representational ## ((,) x) instance Map# ((,) x)
+deriving via Map ## ((,) x) instance Remap ((,) x)
 instance Map ((,) x) where map f (x,a) = (x, f a)
 instance c ==> Remap => TraverseC c ((,) x) 
   where traverseC f (x,a) = remap (\(_,b) -> b) (x,) (f a)
 
-newtype Endo a = Endo (a -> a)
-  deriving Map# via Representational # Endo
-instance Remap Endo where remap ba ab (Endo aa) = Endo (ba > aa > ab)
-
-deriving via Map # P.IO instance Remap P.IO
-deriving via Monad # P.IO instance Map P.IO
-{-deriving via Monad # P.IO instance Apply P.IO-}
-{-deriving via Monad # P.IO instance Bind P.IO-}
-deriving via Representational # P.IO instance Map# P.IO
+instance Monad P.IO where bind f io = io P.>>= f
+instance Applicative P.IO
+instance Apply P.IO where ap = (P.<*>)
+deriving via Apply ## P.IO instance FTimes P.IO
+instance Pure P.IO where pure = P.pure
+instance Map P.IO where map = P.fmap
+deriving via Map ## P.IO instance Remap P.IO
+deriving via Representational ## P.IO instance Map# P.IO
 
 instance (Map f, Map g) => Map (O f g)
   where map f (O fg) = O (map (map f) fg)
 {-instance (Map f, Map g) => TraverseC Wrap (O f g) where traverseC = map_traverseC-}
-instance (Remap f, Remap g) => Map# (O f g) where map# = remap_map# -- TODO: fix this
+deriving via Remap ## O f g instance (Remap f, Remap g) => Map# (O f g)
 instance (Remap f, Remap g) => Remap (O f g)
   where remap f g (O fg) = O (remap (remap g f) (remap f g) fg)
+instance (c ==> Map#, TraverseC c f, TraverseC c g) => TraverseC c (O f g) where
+  traverseC f (O fg) = O `map#` traverseC @c (traverseC @c f) fg
 
 {-instance FAdd [] where fzero = []-}
 {-instance Empty []-}
-deriving via Representational # [] instance Map# []
-deriving via Map # [] instance Remap []
+deriving via Representational ## [] instance Map# []
+deriving via Map ## [] instance Remap []
 {-deriving via Def1 (TraverseC Wrap) [] instance Map []-}
 instance Map [] where map = P.map
 instance Pure [] where pure a = [a]
@@ -263,13 +270,13 @@ instance (c ==> Applicative) => TraverseC c [] where
       a : as -> (:) `map` f a `ap` go as
 
 instance Map ((->) x) where map f g = \a ->  f (g a)
-deriving via Representational # ((->) x) instance Map# ((->) x)
-deriving via Map # ((->) x) instance Remap ((->) x)
+deriving via Representational ## ((->) x) instance Map# ((->) x)
+deriving via Map ## ((->) x) instance Remap ((->) x)
 instance Distribute ((->) x) where distribute fxa = \x -> map ($ x) fxa
 {-instance TraverseC Wrap ((->) x) where traverseC = map_traverseC-}
 
-deriving via Representational # (E x) instance Map# (E x)
-deriving via Map # (E x) instance Remap (E x)
+deriving via Representational ## E x instance Map# (E x)
+deriving via Map ## (E x) instance Remap (E x)
 instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 {-instance Monoid x => FAdd (E x) where-}
   
@@ -279,3 +286,7 @@ instance Map    (E x) where map f     = \case {L x -> L x; R a -> R (f a)}
 instance Pure (E x)   where pure = R
 instance (forall f. c f => (Pure f, Map f)) => TraverseC c (E x) where
   traverseC afb = \case {L x -> pure (L x); R a -> map R (afb a)}
+
+-- * Numerics
+-- | remap (f *** p) (g *** q) (fa |*| fb) = remap f g fa |*| remap p q fb
+class Remap f => FTimes f where (|*|) :: f a -> f b -> f (a,b)

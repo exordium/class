@@ -8,6 +8,9 @@ import Types
 import Data.Maybe as P
 import qualified Prelude as P hiding ((.))
 import qualified Numeric.Natural as P
+
+data family (#) (c :: * -> Constraint) :: * -> *
+
 class Eq' a where
   {-# minimal eq' | comparable, eq #-}
   eq' :: a -> a -> P.Maybe Bool
@@ -68,65 +71,19 @@ instance Ord' a => Ord' [a] where
 
 class Ord' a => Ord a where ord :: a -> Ordering
 
-newtype Stock a = Stock a
-  deriving newtype (P.Num,P.Show)
-instance P.Eq a => Eq (Stock a)
-instance P.Eq a => Eq' (Stock a) where
-  eq = coerce ((P.==) @a)
-  ne = coerce ((P./=) @a)
-  comparable _ _ = True
-instance P.Ord a => Ord' (Stock a) where
-  (<=) = coerce ((P.<=) @a)
-  (<!) = coerce ((P.<) @a)
-  (>=) = coerce ((P.>=) @a)
-  (>!) = coerce ((P.>) @a)
-  ord' (Stock a) (Stock b) = P.Just (P.compare a b)
 {-instance P.Ord a => Meet (Min (Stock a)) where (/\) = coerce (P.min @a)-}
-instance P.Ord a => Act (Min (Stock a))  (Min (Stock a)) where act = coerce (P.min @a)
-instance P.Ord a => Semigroup  (Min (Stock a)) -- where (.) = coerce (P.min @a)
-instance P.Ord a => Idempotent  (Min (Stock a))
-instance P.Ord a => Commutative  (Min (Stock a))
-instance P.Ord a => Semilattice (Min (Stock a))
-instance P.Bounded a => Nil (Min (Stock a)) where nil = coerce (P.maxBound @a)
-instance (P.Bounded a, P.Ord a) => Monoid (Min (Stock a))
-
-instance P.Ord a => Act (Max (Stock a))  (Max (Stock a)) where act = coerce (P.max @a)
-instance P.Ord a => Semigroup  (Max (Stock a)) -- where (.) = coerce (P.min @a)
-instance P.Ord a => Idempotent  (Max (Stock a))
-instance P.Ord a => Commutative  (Max (Stock a))
-instance P.Ord a => Semilattice (Max (Stock a))
-instance P.Bounded a => Nil (Max (Stock a)) where nil = coerce (P.minBound @a)
-instance (P.Bounded a, P.Ord a) => Monoid (Max (Stock a))
 
 {-instance Act (Min a) (Min a) => Act (Min [a]) (Min [a]) where-}
   {-act (Min []) _ = Min []-}
   {-act _ (Min []) = Min []-}
   {-act (Min (a:as)) (Min (b:bs)) = act a b : act (Min as) (Min bs)-}
 
-instance P.Ord a => Lattice (Min (Stock a))
 
 
 newtype GCD a = GCD a deriving newtype P.Num
 type LCM a = Op (GCD a)
 pattern LCM :: a -> LCM a
 pattern LCM a = Op (GCD a)
-instance P.Integral a => Semigroup (GCD (Stock a)) -- where (.) = coerce (P.gcd @a)
-instance P.Integral a => Act (GCD (Stock a)) (GCD (Stock a)) where act= coerce (P.gcd @a)
-instance P.Integral a => Semigroup (LCM (Stock a)) -- where (.) = coerce (P.lcm @a)
-instance P.Integral a => Act (LCM (Stock a)) (LCM (Stock a))
-  where act = coerce (P.lcm @a)
-instance P.Integral a => Nil (GCD (Stock a)) where nil = GCD 0
-instance P.Integral a => Nil (LCM (Stock a)) where nil = LCM 1
-instance P.Integral a => Monoid (GCD (Stock a))
-instance P.Integral a => Monoid (LCM (Stock a))
-instance P.Integral a => Idempotent (GCD (Stock a))
-instance P.Integral a => Idempotent (LCM (Stock a))
-instance P.Integral a => Commutative (GCD (Stock a))
-instance P.Integral a => Commutative (LCM (Stock a))
-instance P.Integral a => Eq' (GCD (Stock a)) where
-  eq' (GCD (Stock a)) (GCD (Stock b)) = P.Just (a P.== b)
-instance P.Integral a => Ord' (GCD (Stock a)) where
-  GCD (Stock a) <= GCD (Stock b) = P.mod b a P.== 0
 {-instance P.Integral a => Join (Join (Stock a))-}
 
 newtype Min a = Min a deriving newtype (P.Num, Ord', Eq',P.Show)
@@ -187,8 +144,6 @@ class (Semilattice a, Semilattice (Op a)) => Lattice a
 -- | bottom \/ = a
 {-class Join a => Bottom a where bottom :: a-}
 
-deriving via (Stock Double) instance Eq' Double
-deriving via (Stock Double) instance Ord' Double
 {-deriving via (Stock Double) instance Meet Double-}
 {-deriving via (Stock Double) instance Join Double-}
 {-instance Lattice Double-}
@@ -294,14 +249,6 @@ instance Semigroup a  => Rg [a]
 {-instance Act a s => Act  (Mul [a]) (Mul [s]) where-}
   {-act (Mul as) (Mul bs) = Mul [a `act` b | a <- as, b <- bs]-}
 {-instance Nil a => Nil (Mul [a]) where nil = Mul [nil]-}
-instance P.Num a => Semigroup     (Stock a) -- where (.) = coerce ((P.+) @a)
-instance P.Num a => Act (Stock a) (Stock a) where act = coerce ((P.+) @a)
-instance P.Num a => Scale  (Stock a) (Stock a) where scale = coerce ((P.*) @a)
-instance P.Num a => Rg     (Stock a)
-instance P.Num a => Nil    (Stock a) where nil = coerce (P.fromInteger @a 0)
-instance P.Num a => Nil    (Mul (Stock a)) where nil = coerce (P.fromInteger @a 1)
-instance P.Num a => Monoid (Stock a) 
-instance P.Num a => Monoid (Mul (Stock a))
 
 instance Semilattice (Min a) => Act (Min [a]) (Min [a])
   where act (Min as) (Min bs) = Min [x | Min x <- P.zipWith (.) [Min a | a <- as] [Min b | b <- bs]]

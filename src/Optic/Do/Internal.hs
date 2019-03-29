@@ -1,17 +1,8 @@
 {-# language TemplateHaskell, QuasiQuotes #-}
 module Optic.Do.Internal where
 {-import Functor.Applicative-}
-import Impl
-import TV
-import K
-import Promap
-import Coercepromap
-import Traverse
 import Fun hiding ((!))
 
-newtype FK f a b = FK {runFK :: f a}
-
-impl @Map [t|FK [tv|f|] [tv|a|]|] ! #map [|\_ (FK fa) -> FK fa|]
 {-instance Apply f => FTimes (FK f a) where ftimes = ap_ftimes-}
 {-instance Apply f => Apply (FK f a) where-}
   {-ap (FK fa) (FK fb) = FK ((\_ b -> b) `map` fa `ap` fb)-}

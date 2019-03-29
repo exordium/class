@@ -48,6 +48,9 @@ class (Arr p, Prismed p) => ArrowChoice p  where
   (|||) :: p x a -> p y a -> p (E x y) a
   p ||| q =  (p +++ q) >^ (\case L a -> a; R a -> a)
 
+infixl 2 |||, +++
+infixl 3 &&&, ***
+
 
 -- * Promap
 class (forall x. MapRep (p x)) => PromapRep p where
@@ -67,6 +70,16 @@ class (forall x. Map (p x), PromapRep p) => Promap p where
   premap = (`promap` \ t -> t)
   postmap :: (b -> t) -> p s b -> p s t
   postmap =  promap  \ s -> s
+
+(>^<) :: Promap p => (s -> a) -> (b -> t) -> p a b -> p s t
+(>^<) = promap
+infixr 1 >^<, ^>, ^<, >^, <^
+(^>) :: Promap p => (s -> a) -> p a x -> p s x
+(^>) = premap
+p <^ f = premap f p
+p >^ f = postmap f p
+(^<) :: Promap p => (b -> t) -> p x b -> p x t
+(^<) = postmap
 
 -- * Closed
 class Promap p => Closed p where
@@ -130,7 +143,7 @@ class Promap p => Prismed p where
   prism :: (s -> E t a) -> (b -> t) -> p a b -> p s t
   prism pat constr = promap pat (id ||| constr) < _R
   _R ::  p a b -> p (E x a) (E x b)
-  _R = prism (\case L t -> L (L t); R a -> R a) R
+  _R = prism (L < L ||| R)  R
   _L :: p a b -> p (E a y) (E b y)
   _L = promap swap swap < _R
 
@@ -231,14 +244,6 @@ instance {-# overlappable #-} (Arrow p, ArrowChoice p) => P.ArrowChoice p where
   p ||| q = either2e ^> (p ||| q)
     where either2e = \case P.Left a -> L a; P.Right b -> R b
 
--- * Ops
-
-(^>) :: Promap p => (s -> a) -> p a x -> p s x
-(^>) = premap
-p <^ f = premap f p
-p >^ f = postmap f p
-(^<) :: Promap p => (b -> t) -> p x b -> p x t
-(^<) = postmap
 
 data family (###) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
 

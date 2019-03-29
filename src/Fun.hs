@@ -21,7 +21,6 @@ import qualified Data.Coerce as GHC
 
 (>) :: (a -> x) -> (x -> b) -> a -> b
 f > g = \a -> g (f a); {-# INLINE (>) #-}
-infixl >
 
 (<) :: (x -> b) -> (a -> x) -> a -> b
 f < g = \a -> f (g a); {-# INLINE (<) #-}

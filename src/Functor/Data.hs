@@ -7,6 +7,8 @@ import Type.E
 import Fun
 import qualified Data.Type.Equality as GHC
 import qualified Prelude as P
+import qualified Numeric.Natural as P
+import Types
 
 newtype Endo a = Endo (a -> a) deriving MapRep via Representational ## Endo
 instance Remap Endo where remap ba ab (Endo aa) = Endo $ ba > aa > ab
@@ -18,26 +20,11 @@ instance Category (GHC.:~:)
 instance Identity (GHC.:~:) where identity = GHC.Refl
 instance Compose (GHC.:~:) where compose = GHC.trans
 
-class Stock (a :: k)
-instance Stock (a :: k)
-
-newtype instance Stock # a = Stock0 a
-instance P.Eq a => Eq (Stock # a)
-instance P.Eq a => Eq' (Stock # a) where
-  eq = coerce ((P.==) @a)
-  ne = coerce ((P./=) @a)
-  comparable _ _ = True
 newtype instance (Stock ## f) a = Stock1 (f a)
 
-instance P.Ord a => Ord' (Stock # a) where
-  (<=) = coerce ((P.<=) @a)
-  (<!) = coerce ((P.<) @a)
-  (>=) = coerce ((P.>=) @a)
-  (>!) = coerce ((P.>) @a)
-  ord' (Stock0 a) (Stock0 b) = P.Just (P.compare a b)
 
 instance P.Ord a => Act (Stock # Min a)  (Stock # Min a) where act = coerce (P.min @a)
-instance P.Ord a => Semigroup  (Stock # Min a) -- where (.) = coerce (P.min @a)
+instance P.Ord a => Semigroup  (Stock # Min a) where (.) = coerce (P.min @a)
 instance P.Ord a => Idempotent  (Stock # Min a)
 instance P.Ord a => Commutative  (Stock # Min a)
 instance P.Ord a => Semilattice (Stock # Min a)
@@ -82,3 +69,25 @@ instance (P.Bounded a, P.Ord a) => Monoid (Stock # Min a)
 {-instance P.Num a => Nil    (Mul (Stock a)) where nil = coerce (P.fromInteger @a 1)-}
 {-instance P.Num a => Monoid (Stock a) -}
 {-instance P.Num a => Monoid (Mul (Stock a))-}
+
+newtype GCD a = GCD a deriving newtype P.Num
+type LCM a = Op (GCD a)
+pattern LCM :: a -> LCM a
+pattern LCM a = Op (GCD a)
+
+newtype Min a = Min a deriving newtype (P.Num, Ord', Eq',P.Show, P.Ord, P.Eq)
+{-instance Meet a => Semigroup (Min a) where (.) = coerce ((/\) @a)-}
+type Max a = Op (Min a)
+pattern Max :: a -> Max a
+pattern Max a = Op (Min a)
+{-instance Join a => Semigroup (Max a) where (.) = coerce ((\/) @a)-}
+
+(&&) :: forall a. Semilattice (Min a) => a -> a -> a
+(&&) = coerce ((.) @(Min a))
+(||) :: forall a. Semilattice (Max a) => a -> a -> a
+(||) = coerce ((.) @(Max a))
+
+max :: forall a. Monoid (Min a) => a
+max = coerce (nil @(Min a))
+min :: forall a. Monoid (Max a) => a
+min = coerce (nil @(Max a))

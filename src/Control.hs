@@ -14,7 +14,6 @@ import qualified Prelude as P
 import Type.Bazaar
 import Type.E
 import Type.I
-import Type.O
 import Type.K
 import Type.X
 import Unsafe.Coerce
@@ -113,17 +112,14 @@ class (Promap p, forall cc. (c ==> cc) => TraversedC cc p)
                     {--> p a b -> p s t-}
   {-traversalC f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversedC @c pab)-}
 
-class TraversedC Map p => Lensed p where
+class TraversedC Map p => Lensed p where -- TODO: check if needed for performance
   lens :: (s -> a) -> (s -> b -> t) -> p a b -> p s t
   lens get set = traversalC @Map \ afb s -> set s `map` afb (get s)
   _2 :: p a b -> p (x,a) (x,b)
   _2 = traversedC @Map
   _1 :: p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
-
-folding :: forall c p a s b t. TraversedC (IsK c) p
-        => (forall m. c m => (a -> m) -> s -> m) -> p a b -> p s t
-folding amsm = traversalC @(IsK c) (\akm s -> K (amsm (unK < akm) s))
+instance {-# overlappable #-} TraversedC Map p => Lensed p
 
 lens0 :: (Prismed p, Lensed p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
@@ -138,7 +134,7 @@ class Promap p => Prismed p where
   _L :: p a b -> p (E a y) (E b y)
   _L = promap swap swap < _R
 
-class Prismed p => Precoerce p where
+class Prismed p => From p where
   {-# minimal from | precoerce #-}
   from :: (b -> t) -> p a b -> p s t
   from bt p = precoerce (postmap bt p)
@@ -196,7 +192,7 @@ instance (c (Bazaar c a b), c ==> Pure) => Pure (Bazaar c a b) where
   pure t = Bazaar (pure t!)
 
 instance (c (Bazaar c a b), c ==> Apply) => Apply (Bazaar c a b) where
-  ap (Bazaar afbfxy) (Bazaar afbfx) = Bazaar \ afb -> afbfxy afb `ap` afbfx afb
+  Bazaar afbfxy |$| Bazaar afbfx = Bazaar \ afb -> afbfxy afb |$| afbfx afb
 instance (c (Bazaar c a b), c ==> Applicative) => Applicative (Bazaar c a b)
 instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where
   bind abz (Bazaar xmyma) = Bazaar \ xmy ->

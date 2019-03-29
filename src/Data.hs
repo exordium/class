@@ -3,11 +3,11 @@
 {-# language TypeSynonymInstances #-}
 {-# language UndecidableSuperClasses #-}
 module Data where
-import qualified Data.Coerce as GHC
 import Types
 import Data.Maybe as P
 import qualified Prelude as P hiding ((.))
 import qualified Numeric.Natural as P
+import Fun
 
 data family (#) (c :: * -> Constraint) :: * -> *
 
@@ -61,38 +61,8 @@ instance Eq' a => Eq' [a] where
   eq' [] [] = Just True
   eq' (x:xs) (y:ys) | eq x y = eq' xs ys
   eq' _ _ = Just False
-instance Ord' a => Ord' [a] where
-  ord' []     []     = Just EQ
-  ord' []     (_:_)  = Just LT
-  ord' (_:_)  []     = Just GT
-  ord' (x:xs) (y:ys) = case ord' x y of
-                              Just EQ -> ord' xs ys
-                              other -> other
 
-class Ord' a => Ord a where ord :: a -> Ordering
-
-{-instance P.Ord a => Meet (Min (Stock a)) where (/\) = coerce (P.min @a)-}
-
-{-instance Act (Min a) (Min a) => Act (Min [a]) (Min [a]) where-}
-  {-act (Min []) _ = Min []-}
-  {-act _ (Min []) = Min []-}
-  {-act (Min (a:as)) (Min (b:bs)) = act a b : act (Min as) (Min bs)-}
-
-
-
-newtype GCD a = GCD a deriving newtype P.Num
-type LCM a = Op (GCD a)
-pattern LCM :: a -> LCM a
-pattern LCM a = Op (GCD a)
-{-instance P.Integral a => Join (Join (Stock a))-}
-
-newtype Min a = Min a deriving newtype (P.Num, Ord', Eq',P.Show)
-{-instance Meet a => Semigroup (Min a) where (.) = coerce ((/\) @a)-}
-type Max a = Op (Min a)
-pattern Max :: a -> Max a
-pattern Max a = Op (Min a)
-{-instance Join a => Semigroup (Max a) where (.) = coerce ((\/) @a)-}
-
+class Ord' a => Ord a where ord :: a -> a -> Ordering
 
 -- | prop> a . a = a
 class Semigroup a => Idempotent a
@@ -100,7 +70,9 @@ class Semigroup a => Idempotent a
 class Semigroup a => Commutative a
 
 
-newtype Op a = Op a deriving newtype (Eq', P.Show)
+newtype Op a = Op a
+  deriving newtype (Eq')
+  deriving stock (P.Show)
 instance Ord' a => Ord' (Op a) where
   (<=) = coerce ((>=) @a)
   (>=) = coerce ((<=) @a)
@@ -118,23 +90,15 @@ instance Ord' a => Ord' (Op a) where
 -- prop> (a . b) <= b
 -- prop> forall x. (x <= a, x <= b) => x <= (a . b)
 class (Idempotent a, Commutative a, Ord' a) => Semilattice a
-{-(/\) :: forall a. Semilattice (Meet a) => a -> a -> a-}
-{-(/\) = coerce ((.) @(Meet a))-}
-{-(\/) :: forall a. Semilattice (Join a) => a -> a -> a-}
-{-(\/) = coerce ((.) @(Join a))-}
-(&&) :: forall a. Semilattice (Min a) => a -> a -> a
-(&&) = coerce ((.) @(Min a))
-(||) :: forall a. Semilattice (Max a) => a -> a -> a
-(||) = coerce ((.) @(Max a))
 
-max :: forall a. Monoid (Min a) => a
-max = coerce (nil @(Min a))
-min :: forall a. Monoid (Max a) => a
-min = coerce (nil @(Max a))
-{-top :: forall a. Monoid (Meet a) => a-}
-{-top = coerce (nil @(Meet a))-}
-{-bot :: forall a. Monoid (Join a) => a-}
-{-bot = coerce (nil @(Join a))-}
+
+class Ord' a => Meet a where (/\) :: a -> a -> a
+class Ord' a => Join a where (\/) :: a -> a -> a
+class Meet a => Top a where top :: a
+class Join a => Bot a where bot :: a
+
+newtype instance Meet # a = Meet a deriving newtype (Meet, Ord',Eq')
+instance Meet a => Semigroup (Meet # a) where (.) = (/\)
 
 -- |Absorption: a \/ (a /\ b) == a /\ (a \/ b) == a
 -- Implies: top \/ a = top, bottom /\ a = bottom
@@ -160,12 +124,12 @@ class (Inv a, Act a x) => Diff a x where
 
 
 class Act a a => Semigroup a where
+  (.) :: a -> a -> a
   scale1 :: P.Natural -> a -> a
   scale1 n = scale1# (n P.+ 1) 
+instance {-# overlappable #-} Semigroup a => Act a a where act = (.)
 
 class Semigroup a => Act a s where act :: a -> s -> s
-(.) :: Semigroup a => a -> a -> a
-(.) = act
 class Nil a where nil :: a
 class (Semigroup a, Nil a) => Monoid a where
   scale0 :: P.Natural -> a -> a
@@ -211,7 +175,7 @@ scale1# y0 x0 = f x0 y0 where
 
 
 instance Rg r => Act (Mul r) (Mul r) where act (Mul a) (Mul b) = Mul (scale a b)
-instance Rg r => Semigroup (Mul r)
+instance Rg r => Semigroup (Mul r) where Mul a . Mul b = Mul (scale a b)
 
 
 -- | A near semiring (bi)module
@@ -229,17 +193,23 @@ one :: forall a. Monoid (Mul a) => a
 one = coerce (nil @(Mul a))
 
 -- | Representational equality
-type (=#) = GHC.Coercible
-coerce :: b =# a => a -> b
-coerce = GHC.coerce; {-# INLINE coerce #-}
 
 
 {--- * Instances-}
-instance Semigroup () -- where _ . _ = ()
+instance Semigroup () where _ . _ = ()
 instance Act    () () where _ `act` _ = ()
 instance Nil       () where nil = ()
 instance Monoid    ()
-instance Semigroup [x] -- where (.) = coerce ((P.++) @x)
+deriving via Stock # () instance Eq ()
+deriving via Stock # () instance Eq' ()
+deriving via Stock # () instance Ord' ()
+deriving via Stock # () instance Ord ()
+deriving via Stock # () instance Meet ()
+deriving via Stock # () instance Join ()
+deriving via Stock # () instance Top ()
+deriving via Stock # () instance Bot ()
+
+instance Semigroup [x] where (.) = coerce ((P.++) @x)
 instance Act [x] [x]  where act = (P.++)
 instance Nil [x]     where nil = []
 {-instance Monoid (Add [x])-}
@@ -249,24 +219,40 @@ instance Semigroup a  => Rg [a]
 {-instance Act a s => Act  (Mul [a]) (Mul [s]) where-}
   {-act (Mul as) (Mul bs) = Mul [a `act` b | a <- as, b <- bs]-}
 {-instance Nil a => Nil (Mul [a]) where nil = Mul [nil]-}
+{-deriving via Stock # [Stock # a] instance Ord a =>  [a]-}
 
-instance Semilattice (Min a) => Act (Min [a]) (Min [a])
-  where act (Min as) (Min bs) = Min [x | Min x <- P.zipWith (.) [Min a | a <- as] [Min b | b <- bs]]
-instance Semilattice (Min a) => Semigroup (Min [a])
-instance Semilattice (Min a) => Idempotent (Min [a])
-instance Semilattice (Min a) => Commutative (Min [a])
-instance (Ord' a, Semilattice (Min a)) => Semilattice (Min [a])
-instance (Monoid (Min a), Semilattice (Min a)) => Nil (Min [a])
-  where nil = Min (let x = max : x in x)
-instance (Monoid (Min a), Semilattice (Min a)) => Monoid (Min [a])
 
-instance Semilattice (Max a) => Act (Max [a]) (Max [a]) where
-  act (Max []) (Max bs) = Max bs
-  act (Max as) (Max []) = Max as
-  act (Max (a:as)) (Max (b:bs)) = coerce ((a || b) :) (act (Max as) (Max bs))
-instance Semilattice (Max a) => Semigroup (Max [a])
-instance Semilattice (Max a) => Idempotent (Max [a])
-instance Semilattice (Max a) => Commutative (Max [a])
-instance (Ord' a, Semilattice (Max a)) => Semilattice (Max [a])
-instance Semilattice (Max a) => Nil (Max [a]) where nil = Max []
-instance Semilattice (Max a) => Monoid (Max [a])
+
+
+newtype instance Stock # a = Stock0 a
+instance P.Eq a => Eq (Stock # a)
+instance P.Eq a => Eq' (Stock # a) where
+  eq = coerce ((P.==) @a)
+  ne = coerce ((P./=) @a)
+  comparable _ _ = True
+
+instance P.Ord a => Meet (Stock # a) where (/\) = coerce (P.max @a)
+instance P.Ord a => Join (Stock # a) where (\/) = coerce (P.min @a)
+instance (P.Ord a, P.Bounded a) => Top (Stock # a) where top = coerce (P.maxBound @a)
+instance (P.Ord a, P.Bounded a) => Bot (Stock # a) where bot = coerce (P.minBound @a)
+
+instance P.Ord a => Ord' (Stock # a) where
+  (<=) = coerce ((P.<=) @a)
+  (<!) = coerce ((P.<) @a)
+  (>=) = coerce ((P.>=) @a)
+  (>!) = coerce ((P.>) @a)
+  ord' (Stock0 a) (Stock0 b) = P.Just (P.compare a b)
+instance P.Ord a => Ord (Stock # a) where ord = coerce (P.compare @a)
+
+newtype instance Ord' # a = Ord' a deriving newtype Ord'
+instance Ord' a => Eq' (Ord' # a) where
+  eq' a b = case ord' a b of 
+    Nothing -> Nothing
+    Just EQ -> Just True
+    _       -> Just False
+
+newtype instance Ord # a = Ord a
+  deriving newtype Ord
+  deriving anyclass Eq
+  deriving Eq' via Ord' # a
+instance Ord a => Ord' (Ord # a) where ord' a b = Just (ord a b)

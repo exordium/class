@@ -15,7 +15,8 @@ import qualified Named.Internal as Named
 import Church
 import Type.E
 import GHC.Prim
-import Unsafe.Coerce
+import qualified Unsafe.Coerce as GHC
+import qualified Data.Coerce as GHC
 
 
 (>) :: (a -> x) -> (x -> b) -> a -> b
@@ -107,4 +108,10 @@ id :: a -> a
 id a = a
 
 coerce# :: a -> b
-coerce# = unsafeCoerce
+coerce# = GHC.unsafeCoerce
+
+type (=#) = GHC.Coercible
+coerce :: b =# a => a -> b
+coerce = GHC.coerce; {-# INLINE coerce #-}
+(#) :: forall a b. (a =# b) => (a -> b) -> a -> b
+(#) _ = GHC.coerce @a @b

@@ -7,3 +7,6 @@ type c ==> c' = (forall x. c x => c' x :: Constraint)
 type Lifting c c' t = (forall x. c x => c' (t x) :: Constraint)
 class (c a, c' a) => (c & c') a
 instance (c a, c' a) => (c & c') a
+
+class Stock (a :: k)
+instance Stock (a :: k)

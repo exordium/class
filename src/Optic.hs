@@ -11,6 +11,7 @@ import Type.E
 import Type.K
 import Type.I
 import qualified Prelude as P
+import qualified Data.Set as P
 import Functor
 import Data
 
@@ -135,21 +136,13 @@ instance Prismed (Prism a b) where
     L t -> L $ L t
     R s -> case seta s of {L t -> L (R t); R a -> R a}
 
-{-newtype View r a (b :: *) = View {runView :: a -> r}-}
-{-_View_ :: PromapRep p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)-}
-{-_View_ = promapRep View runView-}
+newtype View r a (b :: *) = View {runView :: a -> r}
+  deriving (Map, Remap) via (Promap ### View r) a
+  deriving MapRep via Representational ## View r a
+  deriving PromapRep via Representational2 ### View r
+_View_ :: PromapRep p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
+_View_ = promapRep View runView
 
-{-{-impl @Promap [t|View [tv|r|] |] Impl.$$ #promap [|\f g (View an) -> View \ s -> an (f s)|]-}-}
-{-instance MapRep (View r x) where mapRep _ = coerce-}
-{-instance Map (View r x) where map _ = coerce-}
-{-instance Remap (View r x) where remap _ _ = coerce-}
-{-instance Traverse IsI (View r x) where traverse _ = coerce-}
-{-instance Strong (View r x) where strong _ = coerce-}
-{-instance MapM I (View r x) where mapM _ = coerce-}
-{-instance PromapRep (View r) where promapRep _ _ = coerce-}
-{-instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)-}
-{-instance c m => Traversed (IsK c) (View m) where-}
-  {-traversal akmskm (View am) = View (unK < akmskm (K < am))-}
-
-{-{-instance Traverse (IsK P.Monoid) P.Set-}-}
-
+instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
+instance c (K m) => TraversedC c (View m) where
+  traversalC akmskm (View am) = View (unK < akmskm (K < am))

@@ -114,8 +114,7 @@ cocollect tab tfa = map tab (sequence @c tfa)
 
 type Mapped = TraversedC (Applicative & Distribute)
 
-class (Promap p, forall cc. (c ==> cc) => TraversedC cc p)
-  => TraversedC (c :: (* -> *) -> Constraint) p where
+class Promap p => TraversedC (c :: (* -> *) -> Constraint) p where
   traversedC :: TraverseC c t => p a b -> p (t a) (t b)
   traversedC = traversalC @c (traverseC @c)
   traversalC :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t

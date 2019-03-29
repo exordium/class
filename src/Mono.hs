@@ -12,12 +12,12 @@ import Fun
 import Functor
 
 class Each c s t a b | s -> a, t -> b, s b -> t, t a -> s where
-  each :: Traversed c p => p a b -> p s t
-  default each :: (Traverse c g, s ~ g a, t ~ g b, Traversed c p) => p a b -> p s t
-  each = traversed @c
+  each :: TraversedC c p => p a b -> p s t
+  {-default each :: (TraverseC c g, s ~ g a, t ~ g b, TraversedC c p) => p a b -> p s t-}
+  {-each = traversedC @c-}
 
-fold :: forall c s t a b n. (c n, Each (IsK c) s t a b) => (a -> n) -> s -> n
-fold = _View_ $ each @(IsK c) @s @t
+{-fold :: forall c s t a b n. (c n, Each (IsK c) s t a b) => (a -> n) -> s -> n-}
+{-fold = _View_ $ each @(IsK c) @s @t-}
 
 {-sum :: forall s t a b n. (Add0 n, Each (IsK Add0) s t a b) => (a -> n) -> s -> n-}
 {-sum = fold @Add0 @s @t-}
@@ -34,19 +34,20 @@ fold = _View_ $ each @(IsK c) @s @t
 map :: forall s t a b. (Each IsI s t a b) => (a -> b) -> s -> t
 map = each @IsI 
 
-traverse :: forall c s t a b f. (c ==> Map, c f, Each c s t a b)
-              => (a -> f b) -> s -> f t
-traverse = _Traversing_ $ each @c
+{-traverse :: forall c s t a b f. (c ==> Map, c f, Each c s t a b)-}
+              {-=> (a -> f b) -> s -> f t-}
+{-traverse = _Traversing_ $ each @c-}
 
-setTraverse :: forall c f a b. (c ==> Map, c f, Traverse c [], P.Ord b)
+setTraverse :: forall c f a b. (c ==> Map, c f, TraverseC c [], P.Ord b)
             => (a -> f b) -> Set.Set a -> f (Set.Set b)
-setTraverse f = promap Set.toList (Functor.map Set.fromList) (Functor.traverse @c f)
+setTraverse f = promap Set.toList (Functor.map Set.fromList) (Functor.traverseC @c f)
 
-instance (c ==> Applicative, P.Ord b) => Each c (Set.Set a) (Set.Set b) a b where
-  each  = traversal @c (setTraverse @c); {-# INLINE each #-}
-instance Traverse Pure Maybe where traverse f = \case {Nothing -> Nothing; Just a -> Just `Functor.map` f a}
+{-instance (c ==> Applicative, P.Ord b) => Each c (Set.Set a) (Set.Set b) a b where-}
+  {-each  = traversal @c (setTraverse @c); {-# INLINE each #-}-}
+{-instance TraverseC Pure Maybe where-}
+  {-traverseC f = \case {Nothing -> Nothing; Just a -> Just `Functor.map` f a}-}
 {-instance (c ==> Pure) => Each c (P.Maybe a) (P.Maybe b) a b where-}
 
-deriving via (Add (Stock Int)) instance Op (Add Int)
-deriving via (Add (Stock Int)) instance Nil (Add Int)
-instance Monoid (Add Int)
+{-deriving via (Add (Stock Int)) instance Op (Add Int)-}
+{-deriving via (Add (Stock Int)) instance Nil (Add Int)-}
+{-instance Monoid (Add Int)-}

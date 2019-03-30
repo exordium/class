@@ -9,6 +9,9 @@ import Type.K
 import Type.E
 import Type.X
 import qualified Prelude as P
+import qualified GHC.TypeLits as P
+import qualified Data.Proxy as P
+import Type.Fin
 import Types
 import Fun
 {-import {-# source #-} Control-}
@@ -85,6 +88,7 @@ instance Append f => Monoidal E (Append ## f) where
 instance Append f => Semigroup ((Append ## f) a) where (.) = append
 
 
+-- | distribute < imap iab = map (imap iab) < distribute
 class Pure t => Distribute t where
   distribute :: Map f => f (t a) -> t (f a)
   distribute = collect \ x -> x
@@ -92,6 +96,8 @@ class Pure t => Distribute t where
   zipWithF fab = \fta -> fab `map` distribute fta
   collect :: Map f => (a -> t b) -> f a -> t (f b)
   collect f a = zipWithF (\x -> x) (map f a)
+
+
 
 newtype instance (Stock ## f) a = Stock1 (f a)
   deriving newtype (P.Functor,P.Foldable,P.Applicative, P.Monad)
@@ -112,6 +118,18 @@ data V2 a = V2 {v2a :: a, v2b :: a}
   deriving stock (P.Functor, P.Traversable, P.Foldable)
   deriving (Remap, Map) via Stock ## V2
   deriving MapRep via Representational ## V2
+  deriving stock (P.Show)
+
+
+-- | imap f . imap g = imap (\i -> f i . g i)
+--   imap (\_ -> f) = map f
+class Map f => IMap i f where
+  {-# minimal imap #-}
+  imap :: (i -> a -> b) -> f a -> f b
+  adjust :: Eq' i => (a -> a) -> i -> f a -> f a
+  adjust f i = imap (\i' a -> if i `eq` i' then f a else a)
+
+instance IMap (Fin (S (S Z))) V2 where imap f (V2 a b) = V2 (f FZ a) (f (FS FZ) b)
 
 newtype instance (Distribute ## t) a = Distribute (t a)
   deriving (Remap, MapRep) via Map ## Distribute ## t
@@ -122,6 +140,16 @@ instance Distribute t => Distribute (Distribute ## t) where
   collect (coerce -> atb) = Distribute < collect atb
 instance Distribute t => Pure (Distribute ## t) where
   pure = Distribute < mapRep unK < distribute < K
+deriving via Apply ## Distribute ## t
+  instance Distribute t => Monoidal (,) (Distribute ## t)
+instance Distribute t => Apply (Distribute ## t) where
+  (Distribute ta |$ f) (Distribute tb) = Distribute
+    $ zipWithF (\(V2 (L a) (R b)) -> f a b) (V2 (map L ta) (map R tb))
+  Distribute tab |$| Distribute ta = Distribute
+    $ zipWithF (\(V2 (L f) (R a)) -> f a) (V2 (L $@ tab) (R $@ ta))
+
+collect_map :: Distribute t => (a -> b) -> t a -> t b
+collect_map f = unI < collect (I < f)
 
 
 
@@ -235,6 +263,7 @@ for_ t f = traverseC @Map f t
 
 class (Monoidal (,) f, Map f) => Apply f where
   (|$|) :: f (a -> b) -> f a -> f b
+  (|$|) = (|$ id)
   (|$) :: f a -> (a -> b -> c) -> f b -> f c
   fa |$ f = (map f fa |$|)
 ($|) :: (f b -> f c) -> f b -> f c

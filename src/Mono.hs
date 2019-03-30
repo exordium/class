@@ -37,8 +37,8 @@ class Each c s t a b | s -> a, t -> b, s b -> t, t a -> s where
 {-prod1 :: forall s t a b n. (Mul n, Each (IsK Mul) s t a b) => (a -> n) -> s -> n-}
 {-prod1 = fold @Mul @s @t-}
 
-map :: forall s t a b. (Each (Applicative & Distribute) s t a b) => (a -> b) -> s -> t
-map = each @(Applicative & Distribute)
+{-map :: forall s t a b. (Each Mapped s t a b) => (a -> b) -> s -> t-}
+{-map = each @Mapped-}
 
 {-traverse :: forall c s t a b f. (c ==> Map, c f, Each c s t a b)-}
               {-=> (a -> f b) -> s -> f t-}

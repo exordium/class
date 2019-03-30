@@ -112,11 +112,17 @@ cocollect :: forall c f t a b. (TraverseC c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
-class (TraversedC Wrap p, Closed p) => Mapped p  where
-  mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t
-  mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
-  mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)
-  mapped = mapping map
+{-class (TraversedC Wrap p, Closed p) => Mapped p  where -- TODO: check if needed for perf-}
+  {-mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t-}
+  {-mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure-}
+  {-mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)-}
+  {-mapped = mapping map-}
+type Mapped p = (TraversedC Wrap p, Closed p)
+mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t
+mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
+mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)
+mapped = mapping map
+
 
 {-newtype instance (Mapped ### p) a b = Mapped (p a b)-}
 
@@ -173,10 +179,13 @@ instance Promap (->) where
   premap  = \f p s -> p (f s)
   postmap = \g p a -> g (p a)
 instance PromapRep (->) where promapRep _ _ = coerce
-instance Closed  (->)     where distributed = map; closed f = (f <)
-instance ((Applicative & Distribute) ==> c) => TraversedC c (->) where
+{-instance Closed  (->)     where distributed = map; closed f = (f <)-}
+instance Wrap ==> c => TraversedC c (->) where
  traversedC = map
  traversalC l f s = case l (\a -> I (f a)) s of {I t -> t} 
+{-instance Mapped (->) where-}
+  {-mapping = id-}
+  {-mapped = map-}
 instance Prismed (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}
 instance Lensed (->)
 instance Compose (->) where compose = (>)

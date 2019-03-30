@@ -112,7 +112,14 @@ cocollect :: forall c f t a b. (TraverseC c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
-type Mapped = TraversedC (Applicative & Distribute)
+class (TraversedC Wrap p, Closed p) => Mapped p  where
+  mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t
+  mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
+  mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)
+  mapped = mapping map
+
+{-newtype instance (Mapped ### p) a b = Mapped (p a b)-}
+
 
 class Promap p => TraversedC (c :: (* -> *) -> Constraint) p where
   traversedC :: TraverseC c t => p a b -> p (t a) (t b)
@@ -167,7 +174,7 @@ instance Promap (->) where
   postmap = \g p a -> g (p a)
 instance PromapRep (->) where promapRep _ _ = coerce
 instance Closed  (->)     where distributed = map; closed f = (f <)
-instance (((~) I) ==> c) => TraversedC c (->) where
+instance ((Applicative & Distribute) ==> c) => TraversedC c (->) where
  traversedC = map
  traversalC l f s = case l (\a -> I (f a)) s of {I t -> t} 
 instance Prismed (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}

@@ -20,7 +20,6 @@ instance Category (GHC.:~:)
 instance Identity (GHC.:~:) where identity = GHC.Refl
 instance Compose (GHC.:~:) where compose = GHC.trans
 
-newtype instance (Stock ## f) a = Stock1 (f a)
 
 
 instance P.Ord a => Act (Stock # Min a)  (Stock # Min a) where act = coerce (P.min @a)

@@ -29,3 +29,4 @@ library
   hs-source-dirs: src
   build-depends: base, template-haskell, named, impl, ghc-prim, church
                , containers
+               , bytestring

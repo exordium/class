@@ -10,6 +10,12 @@ import Optic
 import Data
 import Fun
 import Functor
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.Word as P
+import Type.I
+
+instance Each Wrap ByteString ByteString P.Word8 P.Word8 where each = mapping BS.map
 
 class Each c s t a b | s -> a, t -> b, s b -> t, t a -> s where
   each :: TraversedC c p => p a b -> p s t
@@ -31,8 +37,8 @@ class Each c s t a b | s -> a, t -> b, s b -> t, t a -> s where
 {-prod1 :: forall s t a b n. (Mul n, Each (IsK Mul) s t a b) => (a -> n) -> s -> n-}
 {-prod1 = fold @Mul @s @t-}
 
-map :: forall s t a b. (Each IsI s t a b) => (a -> b) -> s -> t
-map = each @IsI 
+map :: forall s t a b. (Each (Applicative & Distribute) s t a b) => (a -> b) -> s -> t
+map = each @(Applicative & Distribute)
 
 {-traverse :: forall c s t a b f. (c ==> Map, c f, Each c s t a b)-}
               {-=> (a -> f b) -> s -> f t-}

@@ -1,5 +1,6 @@
 {-# language UndecidableInstances, UndecidableSuperClasses #-}
 {-# language MagicHash #-}
+{-# language DeriveFunctor, DeriveTraversable, DeriveFoldable #-}
 module Functor where
 import qualified Data.Coerce as GHC
 import Data
@@ -21,6 +22,7 @@ instance Remap f => MapRep (Remap ## f) where mapRep f !x = remap coerce f x
 newtype instance (Map ## f) a = Map (f a) deriving newtype Map
 instance Map f => Remap (Map ## f) where remap _ = map
 instance Map f => MapRep (Map ## f) where mapRep _ !x = map coerce x
+instance Map f => P.Functor (Map ## f) where fmap = map
 
 newtype instance (Representational ## f) a = Representational (f a)
 instance Representational f => MapRep (Representational ## f) where mapRep _ = coerce
@@ -44,9 +46,13 @@ newtype instance (Pure ## f) a = Pure (f a)
 newtype instance (Applicative ## f) a = Applicative (f a)
   deriving newtype (Applicative,Pure,Apply)
   deriving (Monoidal (,)) via Apply ## f
-  deriving (Remap,MapRep) via Map ## f
+  deriving (P.Functor,Remap,MapRep) via Map ## f
 
 instance Applicative f => Map (Applicative ## f) where map f = (pure f |$|)
+
+instance Applicative f => P.Applicative (Applicative ## f) where
+  pure = pure
+  (<*>) = (|$|)
 
 -- | @f@ is a Monad-Module over @m@
 class Monad m => Bound m f where bound :: (a -> m b) -> f a -> f b
@@ -92,13 +98,44 @@ instance Append f => Monoidal E (Append ## f) where
 instance Append f => Semigroup ((Append ## f) a) where (.) = append
 
 
-class Map t => Distribute t where
+class Pure t => Distribute t where
   distribute :: Map f => f (t a) -> t (f a)
   distribute = collect \ x -> x
   zipWithF   :: Map f => (f a -> b) -> f (t a) -> t b
   zipWithF fab = \fta -> fab `map` distribute fta
   collect :: Map f => (a -> t b) -> f a -> t (f b)
   collect f a = zipWithF (\x -> x) (map f a)
+
+newtype instance (Stock ## f) a = Stock1 (f a)
+  deriving newtype (P.Functor,P.Foldable,P.Applicative, P.Monad)
+  deriving (MapRep, Remap) via Map ## Stock ## f
+  deriving (Monoidal (,)) via Apply ## Stock ## f
+instance P.Traversable f => P.Traversable (Stock ## f) where
+  traverse afb (Stock1 ta) = P.fmap Stock1 (P.traverse afb ta)
+instance P.Applicative f => Pure (Stock ## f) where pure = P.pure
+instance P.Applicative f => Apply (Stock ## f) where (|$|) = (P.<*>)
+instance P.Applicative f => Applicative (Stock ## f)
+instance P.Monad f => Monad (Stock ## f) where bind f = (P.>>= f)
+instance P.Traversable f => TraverseC Applicative (Stock ## f) where
+  traverseC afb (Stock1 ta) = mapRep Stock1 < (\(Applicative x) -> x)
+                            $ P.traverse (Applicative < afb) ta
+
+instance P.Functor f => Map (Stock ## f) where map = P.fmap
+data V2 a = V2 {v2a :: a, v2b :: a}
+  deriving stock (P.Functor, P.Traversable, P.Foldable)
+  deriving (Remap, Map) via Stock ## V2
+  deriving MapRep via Representational ## V2
+
+newtype instance (Distribute ## t) a = Distribute (t a)
+  deriving (Remap, MapRep) via Map ## Distribute ## t
+instance Distribute t => Map (Distribute ## t) where
+  map ab (Distribute ta) = Distribute $ zipWithF (unI > ab) (I ta)
+instance Distribute t => Distribute (Distribute ## t) where
+  distribute = Distribute < (mapRep (\(Distribute ta) -> ta) > distribute)
+  collect (coerce -> atb) = Distribute < collect atb
+instance Distribute t => Pure (Distribute ## t) where
+  pure = Distribute < mapRep unK < distribute < K
+
 
 
 class Remap f => Comap f where comap :: (b -> a) -> f a -> f b
@@ -221,9 +258,24 @@ class ({- Lifting Monoid One f, -} Map f) => Pure f where
   fone :: f ()
   fone = pure ()
 
+extract :: TraverseC (IsK Stock) f => f a -> a
+extract = traverseC @(IsK Stock) K > unK
+
 -- * Wrap
-class (Monad f, Representational f, forall x. x =# f x) => Wrap f
-instance (Monad f, Representational f, forall x. x =# f x) => Wrap f
+class (Distribute f, Monad f, Representational f, forall x. x =# f x) => Wrap f
+instance (Distribute f, Monad f, Representational f, forall x. x =# f x) => Wrap f
+unwrap :: Wrap f => f a -> a
+unwrap = coerce
+newtype instance (Wrap ## f) a = Wrap (f a)
+instance Wrap f => Monad (Wrap ## f) where f `bind` Wrap (unwrap -> a) = f a
+instance Wrap f => Distribute (Wrap ## f) where distribute = pure < mapRep unwrap
+deriving via Representational ## f instance Wrap f => MapRep (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Map (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Remap (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Monoidal (,) (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Applicative (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Pure (Wrap ## f)
+deriving via Monad ## Wrap ## f instance Wrap f => Apply (Wrap ## f)
 
 newtype instance (Monad ## m) a = Monad (m a)
   deriving newtype (Monad, Applicative, Pure)
@@ -330,6 +382,7 @@ instance Map ((->) x) where map f g = \a ->  f (g a)
 deriving via Representational ## (->) x instance MapRep ((->) x)
 deriving via Map ## (->) x instance Remap ((->) x)
 instance Distribute ((->) x) where distribute fxa = \x -> map ($ x) fxa
+instance Pure ((->) x) where pure = (!)
 
 
 -- ** @[]@

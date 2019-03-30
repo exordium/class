@@ -4,6 +4,7 @@ import Data
 import Functor
 import Control
 import Type.E
+import Type.I
 import Fun
 import qualified Data.Type.Equality as GHC
 import qualified Prelude as P
@@ -90,3 +91,8 @@ max :: forall a. Monoid (Min a) => a
 max = coerce (nil @(Min a))
 min :: forall a. Monoid (Max a) => a
 min = coerce (nil @(Max a))
+
+deriving newtype instance Nil a => Nil (I a)
+deriving newtype instance Monoid a => Monoid (I a)
+instance Semigroup a => Act (I a) (I a) where act (I a) (I b) = I (act a b)
+deriving newtype instance Semigroup a => Semigroup (I a)

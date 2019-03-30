@@ -23,21 +23,12 @@ newtype instance (Map ## f) a = Map (f a) deriving newtype Map
 instance Map f => Remap (Map ## f) where remap _ = map
 instance Map f => MapRep (Map ## f) where mapRep _ !x = map coerce x
 instance Map f => P.Functor (Map ## f) where fmap = map
+instance Map f => TraverseC Wrap (Map ## f) where
+  traverseC afb (Map ta) = pure < Map $ map (afb > unwrap) ta
 
 newtype instance (Representational ## f) a = Representational (f a)
 instance Representational f => MapRep (Representational ## f) where mapRep _ = coerce
 
-newtype instance (Phantom ## f) a = Phantom (f a)
-
-instance Phantom f => Map (Phantom ## f) where map _ = coerce
-instance Phantom f => MapRep (Phantom ## f) where mapRep _ = coerce
-instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
-{-instance (Bind m, Phantom f) => Bind m (Phantom ## f) where bind _ = coerce-}
-phantom_traverseC :: (Phantom t, c ==> Pure, c f) => (a -> f b) -> t a -> f (t b)
-phantom_traverseC _ = pure < phantom
--- Doesn't actually work because deriving via can't get under @f@, use above instead
-instance (Phantom f, c ==> Pure) => TraverseC c (Phantom ## f) where
-  traverseC f (Phantom k) = (pure < Phantom < phantom) k
 
 newtype instance (Pure ## f) a = Pure (f a)
   deriving newtype (Pure,Map)
@@ -62,10 +53,6 @@ instance Bound Maybe [] where
     go [] = []
     go ((f -> Nothing):as)  =     go as
     go ((f -> Just b) :as)  = b : go as
-
-
-
-
 
 -- | 
 -- @filter@ must match default implementation
@@ -192,7 +179,24 @@ representational = GHC.coerce
 class    (forall x y. f x =# f y) => Phantom f
 instance (forall x y. f x =# f y) => Phantom f
 phantom :: forall b a f. Phantom f => f a -> f b
-phantom = GHC.coerce @(f a) @(f b); {-# INLINE phantom #-}
+phantom = GHC.coerce @(f a) @(f b)
+
+newtype instance (Phantom ## f) a = Phantom (f a)
+
+instance Phantom f => Map (Phantom ## f) where map _ = coerce
+instance Phantom f => MapRep (Phantom ## f) where mapRep _ = coerce
+instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
+instance (Phantom f, Append f) => Apply (Phantom ## f) where
+  Phantom fab |$| Phantom fa = Phantom < phantom $ fab `append` phantom fa
+deriving via Apply ## Phantom ## f instance (Append f, Phantom f) => Monoidal (,) (Phantom ## f)
+instance (Phantom f, Empty f) => Pure (Phantom ## f) where pure _ = Phantom empty
+instance (Alternative f, Phantom f) => Applicative (Phantom ## f)
+instance (Alternative m, Phantom m) => Monad (Phantom ## m) where bind _ = coerce
+phantom_traverseC :: (c ==> Pure, c f, Phantom t) => (a -> f b) -> t a -> f (t b)
+phantom_traverseC _ = pure < phantom
+-- Doesn't actually work because deriving via can't get under @f@, use above instead
+instance (Phantom f, c ==> Pure) => TraverseC c (Phantom ## f) where
+  traverseC _ (Phantom k) = (pure < Phantom < phantom) k
 
 class MapRep f where mapRep :: a =# b => (a -> b) -> f a -> f b
 
@@ -227,8 +231,6 @@ for0 t f = traverseC @Pure f t
 
 for_ :: (TraverseC Map t,Map f) => t a -> (a -> f b) -> f (t b)
 for_ t f = traverseC @Map f t
-
-
 
 
 class (Monoidal (,) f, Map f) => Apply f where
@@ -267,15 +269,21 @@ instance (Distribute f, Monad f, Representational f, forall x. x =# f x) => Wrap
 unwrap :: Wrap f => f a -> a
 unwrap = coerce
 newtype instance (Wrap ## f) a = Wrap (f a)
-instance Wrap f => Monad (Wrap ## f) where f `bind` Wrap (unwrap -> a) = f a
+instance Wrap f => Monad (Wrap ## f) where bind = coerce
 instance Wrap f => Distribute (Wrap ## f) where distribute = pure < mapRep unwrap
 deriving via Representational ## f instance Wrap f => MapRep (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Map (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Remap (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Monoidal (,) (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Applicative (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Pure (Wrap ## f)
-deriving via Monad ## Wrap ## f instance Wrap f => Apply (Wrap ## f)
+instance Wrap f => Map (Wrap ## f) where map = coerce
+deriving via Map ## Wrap ## f instance Wrap f => Remap        (Wrap ## f)
+deriving via Apply ## Wrap ## f instance Wrap f => Monoidal (,) (Wrap ## f)
+instance Wrap f => Applicative  (Wrap ## f)
+instance Wrap f => Pure (Wrap ## f) where pure = coerce
+instance Wrap f => Apply (Wrap ## f) where (|$|) = unwrap > coerce
+
+wrap_traverseC :: (c ==> MapRep, c f, Wrap t) => (a -> f b) -> t a -> f (t b)
+wrap_traverseC f (unwrap -> a) = mapRep pure $ f a
+
+instance (Wrap f, c ==> MapRep) => TraverseC c (Wrap ## f) where
+  traverseC f (Wrap (unwrap -> a)) = mapRep pure $ f a
 
 newtype instance (Monad ## m) a = Monad (m a)
   deriving newtype (Monad, Applicative, Pure)
@@ -291,54 +299,10 @@ type family LeftF t where LeftF (E a) = a
 class (Map f, f ~ E (LeftF f)) => IsEither f
 instance IsEither (E a)
 
-deriving via Phantom ## K a instance Map (K a)
-deriving via Phantom ## K a instance MapRep (K a)
-deriving via Phantom ## K a instance Remap (K a)
-instance c ==> Pure => TraverseC c (K a) where traverseC _ (K a) = pure (K a)
-
-map_traverseC :: (I ~ f, Map t) => (a -> f b) -> t a -> f (t b)
-map_traverseC = (I<) < map < (unI<)
-instance Semigroup a => Apply (K a) where K a |$| K b = K (a . b)
-deriving via Apply ## K a instance Semigroup a => Monoidal (,) (K a)
-instance Monoid a => Pure (K a) where pure _ = K nil -- TODO: check this vs one
-instance Monoid a => Applicative (K a)
-instance Monoid a => Distribute (K a) where distribute _ = K nil
-instance Monoid a => Monad (K a) where bind _ = coerce
-
-instance Pure I where pure = I
-instance Apply I where (|$|) = coerce
-deriving via Apply ## I instance Monoidal (,) I
-instance Applicative I
-instance Monad I where bind = coerce
-instance Map I where map = coerce
-deriving via Representational ## I instance MapRep I
-deriving via Map ## I instance Remap I
-instance c ==> MapRep => TraverseC c I where traverseC f (I a) = mapRep I (f a)
-instance Bimap (,) where bimap f g (a,b) = (f a, g b)
-instance LMap (,) where lmap f (a,x) = (f a, x)
-
-
-
-deriving newtype instance Semigroup a => Semigroup (I a)
-instance Semigroup a => Act (I a) (I a) where act (I a) (I b) = I (act a b)
-deriving newtype instance Nil a => Nil (I a)
-deriving newtype instance Monoid a => Monoid (I a)
-{-instance TraverseC Wrap I    where traverseC = map_traverseC-}
-instance Distribute I where distribute (fia :: f (I a)) = I (mapRep unI fia)
-
-
-deriving via Representational ## (,) x instance MapRep ((,) x)
-deriving via Map ## (,) x instance Remap ((,) x)
-instance Map ((,) x) where map f (x,a) = (x, f a)
-instance c ==> Remap => TraverseC c ((,) x) 
-  where traverseC f (x,a) = remap (\(_,b) -> b) (x,) (f a)
 
 
 
 
-
-{-instance Monoid x => FAdd (E x) where-}
-  
 
 -- | A @Monoidal@ functor over some associative monoidal product @t@
 -- prop> remap (bimap f p) (bimap g q) (monoidal fa fb) = remap f g fa `monoidal` remap p q fb
@@ -353,6 +317,18 @@ class Remap f => FZero f where
 class (FZero f, Map f) => Empty f where
   empty :: f a
   empty = map absurd fzero
+
+newtype instance (Empty ## f) a = Empty (f a)
+  deriving newtype (Empty,Map)
+  deriving (Remap,MapRep) via Map ## f
+instance Empty f => FZero (Empty ## f) where fzero = empty
+
+
+
+class (Append f, Empty f) => Alternative f
+
+
+-- * Defaults
 
 
 -- * Instances
@@ -399,6 +375,46 @@ instance (c ==> Applicative) => TraverseC c [] where
       [] -> pure []
       a : as -> (:) $@ f a |$| go as
 
+-- ** @(,)@
+deriving via Representational ## (,) x instance MapRep ((,) x)
+deriving via Map ## (,) x instance Remap ((,) x)
+instance Map ((,) x) where map f (x,a) = (x, f a)
+instance Bimap (,) where bimap f g (a,b) = (f a, g b)
+instance LMap (,) where lmap f (a,x) = (f a, x)
+instance c ==> Remap => TraverseC c ((,) x) 
+  where traverseC f (x,a) = remap (\(_,b) -> b) (x,) (f a)
+
+-- ** @I@
+deriving via Wrap ## I instance Pure I
+deriving via Wrap ## I instance Apply I
+deriving via Wrap ## I instance Monoidal (,) I
+deriving via Wrap ## I instance Monad I
+deriving via Wrap ## I instance Map I
+instance Applicative I
+deriving via Wrap ## I instance MapRep I
+deriving via Wrap ## I instance Remap I
+instance c ==> MapRep => TraverseC c I where traverseC f (I a) = mapRep I (f a)
+instance Distribute I where distribute (fia :: f (I a)) = I (mapRep unI fia)
+
+-- ** @K@
+deriving via Phantom ## K a instance Map (K a)
+deriving via Phantom ## K a instance MapRep (K a)
+deriving via Phantom ## K a instance Remap (K a)
+instance c ==> Pure => TraverseC c (K a) where traverseC = phantom_traverseC @c
+
+instance Nil a => Empty (K a) where empty = K nil
+deriving via Empty ## K a instance Nil a => FZero (K a)
+instance Semigroup a => Append (K a) where K a `append` K b = K $ a . b
+instance Monoid a => Alternative (K a)
+deriving via Append ## K a instance Semigroup a => Monoidal E (K a)
+deriving via (Append ## K a) x instance Semigroup a => Semigroup (K a x)
+deriving via Phantom ## K a instance Semigroup a => Apply (K a)
+deriving via Apply ## K a instance Semigroup a => Monoidal (,) (K a)
+deriving via Phantom ## K a instance Monoid a => Pure (K a)
+instance Monoid a => Applicative (K a)
+instance Monoid a => Distribute (K a) where distribute _ = K nil
+deriving via Phantom ## K a instance Monoid a => Monad (K a)
+
 -- ** IO
 instance Monad P.IO where bind f io = io P.>>= f
 instance Applicative P.IO
@@ -408,4 +424,3 @@ instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Map ## P.IO instance Remap P.IO
 deriving via Representational ## P.IO instance MapRep P.IO
-

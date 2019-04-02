@@ -94,6 +94,10 @@ instance Ord' a => Ord' (Co a) where
   (>?) = coerce ((<?) @a)
   ord' a b = coerce (ord' @a) b a
   comparable' = coerce (comparable' @a)
+instance Join a => Meet (Co a) where (/\) = coerce ((\/) @a)
+instance Meet a => Join (Co a) where (\/) = coerce ((/\) @a)
+instance Top a => Bot (Co a) where bot = Co top
+instance Bot a => Top (Co a) where top = Co bot
 
 -- | Least upper bound
 -- prop> (a . b) <= a
@@ -102,19 +106,19 @@ instance Ord' a => Ord' (Co a) where
 class (Idempotent a, Commutative a, Ord' a) => Semilattice a
 
 class Ord' a => Meet a where (/\) :: a -> a -> a
+meet a = (/\ a)
 class Ord' a => Join a where (\/) :: a -> a -> a
+join a = (\/ a)
 class Meet a => Top a where top :: a
 class Join a => Bot a where bot :: a
 
-meet a = (/\ a)
-join a = (\/ a)
+class (Meet & Join) a => Lattice a
 
 newtype instance Meet # a = Meet a deriving newtype (Meet, Ord',Eq')
 instance Meet a => Op (Meet # a) where (.) = (/\)
 
 -- |Absorption: a \/ (a /\ b) == a /\ (a \/ b) == a
 -- Implies: top \/ a = top, bottom /\ a = bottom
-class (Semilattice a, Semilattice (Co a)) => Lattice a
 -- | top /\ a = a
 {-class Meet a => Top a where top :: a-}
 -- | bottom \/ = a
@@ -131,10 +135,10 @@ class (Semilattice a, Semilattice (Co a)) => Lattice a
 --    implies: diff x x = nil
 class (Inv a, Act a x) => Diff a x where
   diff :: x -> x -> a
-  default diff :: (x ~ a, Inv a) => x -> x -> a
-  diff a b = a `act` inv b
 
-class Act a a => Op a where
+instance {-# overlappable #-} Inv a => Diff a a where diff a b = a `act` inv b
+
+class Op a where
   (.) :: a -> a -> a
   scale1 :: P.Natural -> a -> a
   scale1 n = scale1# (n P.+ 1) 
@@ -161,10 +165,16 @@ class (Monoid a, Diff a a) => Inv a where
 
 -- | A (right) Near Semiring, Ie a "Ring" without the identity and negation
 --(a+b)c = ac + bc
-class Scale r r => Rg r
+class Op r => Rg r where (*) :: r -> r -> r
+instance {-# overlappable #-} Rg r => Scale r r where scale = (*)
+newtype instance Rg # r = Rg r deriving newtype Rg
+instance Rg r => Scale (Rg # r) (Rg # r) where scale = coerce ((*) @r)
+instance Rg r => Op (Rg # r) where Rg a . Rg b = Rg (scale b a)
+one :: forall a. Monoid (Rg # a) => a
+one = coerce (nil @(Rg # a))
 
 -- | A "Rig": Ring without negatives
-class (Rg r, Monoid r, Monoid (Mul r)) => FromNatural r where
+class (Rg r, Monoid r, Monoid (Rg # r)) => FromNatural r where
   fromNatural :: P.Natural -> r
   fromNatural = (`scale0` one)
 
@@ -187,23 +197,12 @@ scale1# y0 x0 = f x0 y0 where
 
 
 
-instance Rg r => Act (Mul r) (Mul r) where act (Mul a) (Mul b) = Mul (scale a b)
-instance Rg r => Op (Mul r) where Mul a . Mul b = Mul (scale a b)
-
-
 -- | A near semiring (bi)module
 -- (r*s)a = r(sa)
 -- r(as) = (ra)s
 -- (r+s)a = ra + sa
 class (Rg r, Op a) => Scale r a where scale :: r -> a -> a
 
-newtype Add a = Add a
-  deriving newtype P.Num
-newtype Mul a = Mul a
-(*) :: Rg r => r -> r -> r
-(*) = scale
-one :: forall a. Monoid (Mul a) => a
-one = coerce (nil @(Mul a))
 
 -- | Representational equality
 
@@ -222,16 +221,9 @@ deriving via Stock # () instance Join ()
 deriving via Stock # () instance Top ()
 deriving via Stock # () instance Bot ()
 
-instance Op [x] where (.) = coerce ((P.++) @x)
-instance Act [x] [x]  where act = (P.++)
-instance Nil [x]     where nil = []
-{-instance Monoid (Add [x])-}
-instance Op a => Scale [a] [a] where
-  scale as bs = [ a . b | a <- as, b <- bs]
-instance Op a  => Rg [a]
-{-instance Act a s => Act  (Mul [a]) (Mul [s]) where-}
-  {-act (Mul as) (Mul bs) = Mul [a `act` b | a <- as, b <- bs]-}
-{-instance Nil a => Nil (Mul [a]) where nil = Mul [nil]-}
+{-instance Act a s => Act  (Rg # [a]) (Rg # [s]) where-}
+  {-act (Rg # as) (Rg # bs) = Rg # [a `act` b | a <- as, b <- bs]-}
+{-instance Nil a => Nil (Rg # [a]) where nil = Rg # [nil]-}
 {-deriving via Stock # [Stock # a] instance Ord a =>  [a]-}
 
 

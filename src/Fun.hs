@@ -6,7 +6,7 @@
 module Fun (module Fun, module X) where
 {-import Promap-}
 import qualified Prelude as P
-import Prelude as X (Bool(..),IO,print,Char,Double,Int,Maybe(..),maybe,Integer,Integral(..),Num(..))
+import Prelude as X (Bool(..),IO,print,Char,Double,Int,Maybe(..),maybe,Integer,Integral(..),Num(fromInteger))
 import Data.Maybe (fromMaybe)
 import Named as X (WithParam,(:!),(:?),arg)
 import Named.Internal as X (Param(..),Decide)

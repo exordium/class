@@ -190,19 +190,29 @@ newtype instance (Empty ## f) a = Empty (f a)
   deriving newtype (Empty,Map)
   deriving (Remap,Map_) via Map ## f
 instance Empty f => FZero (Empty ## f) where fzero = empty
+instance Empty f => Nil ((Empty ## f) a) where nil = empty
 
 class (Append f, Empty f) => Alternative f
 
+-- | (fa ++ fb) `monoidal` fc = (fa `monoidal` fc) ++ (fb `monoidal` fc)
+class (Append f, Apply f) => Rg1 f
+newtype instance (Rg1 ## f) a = Rg1 (f a)
+  deriving newtype (Rg1, Append, Apply,Map,Op, Remap, Map_)
+deriving newtype instance Rg1 f => Monoidal E (Rg1 ## f)
+deriving newtype instance Rg1 f => Monoidal (,) (Rg1 ## f)
+instance (Rg1 f, Op a) => Rg ((Rg1 ## f) a) where (*) = liftA2 (.)
+
 -- | Covariant E-monoidal functors can be appended
 class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
-  append :: f a -> f a -> f a
-  append fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
+  (++) :: f a -> f a -> f a
+  (++) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
 newtype instance (Append ## f) a = Append (f a)
   deriving newtype (Append, Map)
   deriving (Remap,Map_) via Map ## f
 instance Append f => Monoidal E (Append ## f) where
-  monoidal (Append fa) (Append fb) = Append $ append (map L fa) (map R fb)
-instance Append f => Op ((Append ## f) a) where (.) = append
+  monoidal (Append fa) (Append fb) = Append $ map L fa ++ map R fb
+instance Append f => Op ((Append ## f) a) where (.) = (++)
+append a = (++ a)
 
 -- * Contravariant Functors
 class Remap f => Comap f where comap :: (b -> a) -> f a -> f b
@@ -298,7 +308,7 @@ instance Phantom f => Comap (Phantom ## f) where comap _ = coerce
 instance Phantom f => Map_ (Phantom ## f) where map_ _ = coerce
 instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
 instance (Phantom f, Append f) => Apply (Phantom ## f) where
-  Phantom fab `ap` Phantom fa = Phantom < phantom $ fab `append` phantom fa
+  Phantom fab `ap` Phantom fa = Phantom < phantom $ fab ++ phantom fa
 deriving via Apply ## Phantom ## f instance (Append f, Phantom f) => Monoidal (,) (Phantom ## f)
 instance (Phantom f, Empty f) => Pure (Phantom ## f) where pure _ = Phantom empty
 instance (Alternative f, Phantom f) => Applicative (Phantom ## f)
@@ -411,8 +421,16 @@ deriving via Empty            ## [] instance FZero []
 deriving via Representational ## [] instance Map_ []
 deriving via Map              ## [] instance Remap []
 instance Empty [] where empty = []
+deriving via (Empty ## []) a instance Nil [a]
 instance Map   [] where map = P.map
 instance Pure  [] where pure a = [a]
+instance Append [] where (++) = (P.++) -- TODO: fix
+deriving via Append ## [] instance Monoidal E []
+deriving via (Append ## []) a instance Op [a]
+instance Apply [] where ap = (P.<*>) -- TODO: fix
+deriving via Apply ## [] instance Monoidal (,) []
+instance Rg1 []
+deriving via (Rg1 ## []) a instance Op a => Rg [a]
 instance (c ==> Applicative) => TraverseC c [] where
   traverseC f = go where
     go = \case
@@ -452,7 +470,7 @@ deriving via Phantom ## K a instance Remap (K a)
 instance c ==> Pure => TraverseC c (K a) where traverseC = phantom_traverseC @c
 instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
-instance Op a => Append (K a) where K a `append` K b = K $ a . b
+instance Op a => Append (K a) where K a ++ K b = K $ a . b
 instance Monoid a => Alternative (K a)
 deriving via Append ## K a instance Op a => Monoidal E (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)

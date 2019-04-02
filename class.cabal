@@ -24,7 +24,7 @@ library
   exposed-modules: Data, Control, Fun, Functor
                  , Types, Type.I, Type.O, Type.K, Type.E, Type.X, Type.Bazaar
                  , Reflect , Reflect.Monoid, Reflect.Mod
-                 , Functor.Data
+                 , Functor.Data, Functor.Unsafe
                  , Optic
   hs-source-dirs: src
   build-depends: base, template-haskell, named, impl, ghc-prim, church

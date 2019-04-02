@@ -264,13 +264,12 @@ newtype instance (Promap ### p) a b = Promap (p a b)
   deriving newtype Promap
   deriving (Remap,Map_) via (Promap ### p) a
 instance Promap p => Map ((Promap ### p) a) where map f (Promap p) = Promap (postmap f p)
-instance Promap p => Promap_ (Promap ### p) where
+instance {-# overlappable #-} Promap p => Promap_ p where
   promap_ _ _ !p = promap coerce coerce p
   premap_ _ !p = premap coerce p
   postmap_ _ !p = postmap coerce p
 
-newtype instance (Promap_ ### p) a b = Promap_ (p a b)
-  deriving newtype Promap_
+newtype instance (Promap_ ### p) a b = Promap_ (p a b) deriving newtype Promap_
 instance Promap_ p => Map_ ((Promap_ ### p) a) where
   map_ f (Promap_ p) = Promap_ (postmap_ f p)
 

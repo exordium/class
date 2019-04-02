@@ -109,34 +109,17 @@ class Ord' a => Meet a where (/\) :: a -> a -> a
 meet a = (/\ a)
 class Ord' a => Join a where (\/) :: a -> a -> a
 join a = (\/ a)
+-- |Absorption: a \/ (a /\ b) == a /\ (a \/ b) == a
+-- Implies: top \/ a = top, bottom /\ a = bottom
+-- | top /\ a = a
 class Meet a => Top a where top :: a
+-- | bot \/ = a
 class Join a => Bot a where bot :: a
 
 class (Meet & Join) a => Lattice a
 
 newtype instance Meet # a = Meet a deriving newtype (Meet, Ord',Eq')
 instance Meet a => Op (Meet # a) where (.) = (/\)
-
--- |Absorption: a \/ (a /\ b) == a /\ (a \/ b) == a
--- Implies: top \/ a = top, bottom /\ a = bottom
--- | top /\ a = a
-{-class Meet a => Top a where top :: a-}
--- | bottom \/ = a
-{-class Join a => Bottom a where bottom :: a-}
-
-{-deriving via (Stock Double) instance Meet Double-}
-{-deriving via (Stock Double) instance Join Double-}
-{-instance Lattice Double-}
-{-instance Bottom Double where bottom = -1 P./ 0-}
-{-instance Top Double    where top    =  1 P./ 0-}
-
---  | act (diff x y) x = y
---    diff x y = inv (diff y x)
---    implies: diff x x = nil
-class (Inv a, Act a x) => Diff a x where
-  diff :: x -> x -> a
-
-instance {-# overlappable #-} Inv a => Diff a a where diff a b = a `act` inv b
 
 class Op a where
   (.) :: a -> a -> a
@@ -153,10 +136,13 @@ class (Op a, Nil a) => Monoid a where
   scale0 0 = \_ -> nil
   scale0 n = scale1# n
 
-class (Monoid a, Diff a a) => Inv a where
+-- | inv < inv = id
+class Monoid a => Inv a where
   {-# minimal inv #-}
   inv :: a -> a
-  inv = diff nil 
+  inv = (nil -)
+  (-) :: a -> a -> a
+  a - b = inv b . a
   scalei :: P.Integer -> a -> a
   scalei n a = case P.compare n 0 of
     EQ -> nil

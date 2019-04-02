@@ -22,6 +22,7 @@ import Reflect
 -- * Classes
 
 class Map_ f => Remap f where remap :: (b -> a) -> (a -> b) -> f a -> f b
+instance {-# overlappable #-} Remap f => Map_ f where map_ _ !x = remap coerce coerce x
 newtype instance (Remap ## f) a = Remap (f a) deriving newtype Remap
 instance Remap f => Map_ (Remap ## f) where map_ f !x = remap coerce f x
 -- | Every haskell functor is Strong
@@ -32,7 +33,6 @@ class (Remap f, TraverseC Wrap f) => Map f where
   map :: (a -> b) -> f a -> f b
   mapConst :: b -> f a -> f b
   mapConst b = map \ _ -> b
-instance {-# overlappable #-} Map f => Map_ f where map_ _ !x = map coerce x
 instance {-# overlappable #-} (c ==> Wrap, Map f) => TraverseC c f where
   traverseC f = pure < map (unwrap < f)
 instance {-# overlappable #-} (Map f, Map_ f) => Remap f where remap _ = map
@@ -121,8 +121,8 @@ class (Monoidal (,) f, Map f) => Apply f where
   ap = liftA2 id
   liftA2 :: (a -> b -> c) -> f a -> f b -> f c
   liftA2 f = ap < map f
-newtype instance (Apply ## f) a = Apply (f a) deriving newtype (Apply, Map)
-instance Apply f => Monoidal (,) (Apply ## f) where monoidal fa = ((,) $@ fa |$|)
+instance {-# overlappable #-} Apply f => Monoidal (,) f where
+  monoidal fa = ((,) $@ fa |$|)
 (|$|) :: Apply f => f (a -> b) -> f a -> f b
 (|$|) = ap
 -- | Infix synonym for @liftA2@ to be used with @($|)@. Ex:
@@ -144,8 +144,7 @@ f $| fb = f fb
 class (Map f, Pure f, Apply f) => Applicative f
 newtype instance (Applicative ## f) a = Applicative (f a)
   deriving newtype (Applicative,Pure,Apply)
-  deriving (Monoidal (,)) via Apply ## f
-  deriving (P.Functor,Map_) via Map ## f
+  deriving (P.Functor) via Map ## f
 instance Applicative f => Map (Applicative ## f) where map f = (pure f |$|)
 instance Applicative f => P.Applicative (Applicative ## f) where
   pure = pure
@@ -168,8 +167,6 @@ instance Distribute t => Distribute (Distribute ## t) where
   collect (coerce -> atb) = Distribute < collect atb
 instance Distribute t => Pure (Distribute ## t) where
   pure = Distribute < map_ unK < distribute < K
-deriving via Apply ## Distribute ## t
-  instance Distribute t => Monoidal (,) (Distribute ## t)
 instance Distribute t => Apply (Distribute ## t) where
   liftA2 f (Distribute ta) (Distribute tb) = Distribute
     $ zipWithF (\(V2 (L a) (R b)) -> f a b) (V2 (map L ta) (map R tb))
@@ -212,8 +209,7 @@ class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
   (|.|) :: f a -> f a -> f a
   (|.|) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
 newtype instance (Append ## f) a = Append (f a) deriving newtype (Append, Map)
-instance Append f => Monoidal E (Append ## f) where
-  monoidal (Append fa) (Append fb) = Append $ map L fa |.| map R fb
+instance {-# overlappable #-} Append f => Monoidal E f where monoidal fa fb = map L fa |.| map R fb
 instance Append f => Op ((Append ## f) a) where (.) = (|.|)
 append a = (|.| a)
 
@@ -312,7 +308,6 @@ instance Phantom f => Comap (Phantom ## f) where comap _ = coerce
 instance Phantom f => Map_ (Phantom ## f) where map_ _ = coerce
 instance (Phantom f, Append f) => Apply (Phantom ## f) where
   Phantom fab `ap` Phantom fa = Phantom < phantom $ fab |.| phantom fa
-deriving via Apply ## Phantom ## f instance (Append f, Phantom f) => Monoidal (,) (Phantom ## f)
 instance (Phantom f, Empty f) => Pure (Phantom ## f) where pure _ = Phantom empty
 instance (Alternative f, Phantom f) => Applicative (Phantom ## f)
 instance (Alternative m, Phantom m) => Monad (Phantom ## m) where bind _ = coerce
@@ -332,7 +327,6 @@ instance Wrap f => Monad (Wrap ## f) where bind = coerce
 instance Wrap f => Distribute (Wrap ## f) where distribute = pure < map_ unwrap
 deriving via Representational ## f instance Wrap f => Map_ (Wrap ## f)
 instance Wrap f => Map (Wrap ## f) where map = coerce
-deriving via Apply ## Wrap ## f instance Wrap f => Monoidal (,) (Wrap ## f)
 instance Wrap f => Applicative  (Wrap ## f)
 instance Wrap f => Pure (Wrap ## f) where pure = coerce
 instance Wrap f => Apply (Wrap ## f) where ap = unwrap > coerce
@@ -365,7 +359,6 @@ instance IsEither (E a)
 -- Stock
 newtype instance (Stock ## f) a = Stock1 (f a)
   deriving newtype (P.Functor,P.Foldable,P.Applicative, P.Monad)
-  deriving (Monoidal (,)) via Apply ## Stock ## f
 instance P.Traversable f => P.Traversable (Stock ## f) where
   traverse afb (Stock1 ta) = P.fmap Stock1 (P.traverse afb ta)
 instance P.Applicative f => Pure (Stock ## f) where pure = P.pure
@@ -428,7 +421,6 @@ instance Append [] where (|.|) = (P.++) -- TODO: fix
 deriving via Append ## [] instance Monoidal E []
 deriving via (Append ## []) a instance Op [a]
 instance Apply [] where ap = (P.<*>) -- TODO: fix
-deriving via Apply ## [] instance Monoidal (,) []
 instance Rg1 []
 deriving via (Rg1 ## []) a instance Op a => Rg [a]
 instance (c ==> Applicative) => TraverseC c [] where
@@ -472,7 +464,6 @@ instance Monoid a => Alternative (K a)
 deriving via Append ## K a instance Op a => Monoidal E (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)
 deriving via Phantom ## K a instance Op a => Apply (K a)
-deriving via Apply ## K a instance Op a => Monoidal (,) (K a)
 deriving via Phantom ## K a instance Nil a => Pure (K a)
 instance Monoid a => Applicative (K a)
 instance Monoid a => Distribute (K a) where distribute _ = K nil
@@ -482,8 +473,6 @@ deriving via Phantom ## K a instance Monoid a => Monad (K a)
 instance Monad P.IO where bind f io = io P.>>= f
 instance Applicative P.IO
 instance Apply P.IO where ap = (P.<*>)
-deriving via Apply ## P.IO instance Monoidal (,) P.IO
 instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Representational ## P.IO instance Map_ P.IO
-

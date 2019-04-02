@@ -9,7 +9,6 @@
 module Control where
 import GHC.Types
 import Impl hiding ((!))
-import TV
 import qualified Prelude as P
 import Type.Bazaar
 import Type.E

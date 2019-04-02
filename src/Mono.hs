@@ -19,8 +19,8 @@ instance Each Wrap ByteString ByteString P.Word8 P.Word8 where each = mapping BS
 
 class Each c s t a b | s -> a, t -> b, s b -> t, t a -> s where
   each :: TraversedC c p => p a b -> p s t
-  {-default each :: (TraverseC c g, s ~ g a, t ~ g b, TraversedC c p) => p a b -> p s t-}
-  {-each = traversedC @c-}
+instance {-# overlappable #-} TraverseC c f => Each c (f a) (f b) a b where
+  each = traversedC @c
 
 {-fold :: forall c s t a b n. (c n, Each (IsK c) s t a b) => (a -> n) -> s -> n-}
 {-fold = _View_ $ each @(IsK c) @s @t-}

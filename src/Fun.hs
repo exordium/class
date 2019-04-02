@@ -18,6 +18,9 @@ import GHC.Prim
 import qualified Unsafe.Coerce as GHC
 import qualified Data.Coerce as GHC
 
+fix :: (a -> a) -> a
+fix f = f (fix f)
+
 
 (>) :: (a -> x) -> (x -> b) -> a -> b
 f > g = \a -> g (f a); {-# INLINE (>) #-}

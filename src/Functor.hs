@@ -9,6 +9,7 @@ import Type.K
 import Type.E
 import Type.X
 import qualified Prelude as P
+import qualified Control.Monad.Fix as P
 import qualified GHC.TypeLits as P
 import qualified Data.Proxy as P
 import Types
@@ -98,6 +99,10 @@ instance Reifies s (Reified Nil a) => Nil (Instance Nil a s) where
 -- | A @Monoidal@ functor over some associative monoidal product @t@
 -- prop> remap (bimap f p) (bimap g q) (monoidal fa fb) = remap f g fa `monoidal` remap p q fb
 class (Bimap t, Remap f) => Monoidal t f where monoidal :: f a -> f b -> f (a `t` b)
+(|*|) :: Monoidal (,) f => f a -> f b -> f (a,b)
+(|*|) = monoidal
+(|+|) :: Monoidal E f => f a -> f b -> f (E a b)
+(|+|) = monoidal
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
 -- Free Theorem:
 -- prop> pure < f = map f < pure
@@ -135,6 +140,9 @@ fa |$ f = liftA2 f fa
 ($|) :: (f b -> f c) -> f b -> f c
 f $| fb = f fb
 
+(|&|) :: Apply f => f a -> f (a -> b) -> f b
+(|&|) = liftA2 (\a f -> f a)
+
 -- | prop> @pure f |$| fa@ = map f fa@
 --   prop> ff |$| pure a = map ($ a) ff
 class (Map f, Pure f, Apply f) => Applicative f
@@ -148,7 +156,7 @@ instance Applicative f => P.Applicative (Applicative ## f) where
   (<*>) = ap
 
 -- | distribute < imap (imap < iab) = imap (imap < flip iab) < distribute
-class Applicative t => Distribute t where
+class Monad t => Distribute t where
   distribute :: Map f => f (t a) -> t (f a)
   distribute = collect \ x -> x
   zipWithF   :: Map f => (f a -> b) -> f (t a) -> t b
@@ -172,6 +180,10 @@ instance Distribute t => Apply (Distribute ## t) where
     $ zipWithF (\(V2 (L a) (R b)) -> f a b) (V2 (map L ta) (map R tb))
   Distribute tab `ap` Distribute ta = Distribute
     $ zipWithF (\(V2 (L f) (R a)) -> f a) (V2 (L $@ tab) (R $@ ta))
+instance Distribute t => Monad (Distribute ## t) where
+  bind atb ta = ta |&| distribute atb
+instance Distribute t => MonadFix (Distribute ## t) where
+  mfix = map fix < distribute
 
 -- | A @FZero f@ has a partiuclar uninhabited singled out.
 -- Dual to 'Pure'
@@ -204,15 +216,15 @@ instance (Rg1 f, Op a) => Rg ((Rg1 ## f) a) where (*) = liftA2 (.)
 
 -- | Covariant E-monoidal functors can be appended
 class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
-  (++) :: f a -> f a -> f a
-  (++) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
+  (|.|) :: f a -> f a -> f a
+  (|.|) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
 newtype instance (Append ## f) a = Append (f a)
   deriving newtype (Append, Map)
   deriving (Remap,Map_) via Map ## f
 instance Append f => Monoidal E (Append ## f) where
-  monoidal (Append fa) (Append fb) = Append $ map L fa ++ map R fb
-instance Append f => Op ((Append ## f) a) where (.) = (++)
-append a = (++ a)
+  monoidal (Append fa) (Append fb) = Append $ map L fa |.| map R fb
+instance Append f => Op ((Append ## f) a) where (.) = (|.|)
+append a = (|.| a)
 
 -- * Contravariant Functors
 class Remap f => Comap f where comap :: (b -> a) -> f a -> f b
@@ -251,10 +263,14 @@ newtype instance (Monad ## m) a = Monad (m a)
   deriving (Monoidal (,), Map, Remap, Map_) via Applicative ## Monad ## m
 instance Monad m => Apply (Monad ## m) where
   Monad mab `ap` Monad ma = Monad (mab >>= \ ab -> ma >>= (ab $) > pure)
+(=<<) :: Monad m => (a -> m b) -> m a -> m b
+(=<<) = bind
 (>>=) :: Monad m => m a -> (a -> m b) -> m b
-(>>=) m = (`bind` m)
+(>>=) m = (=<< m)
 infixl 1 >>=
+infixr 1 =<<
 
+class Monad m => MonadFix m where mfix :: (a -> m a) -> m a
 -- | imap f . imap g = imap (\i -> f i . g i)
 --   imap (\_ -> f) = map f
 class Map f => IMap i f where
@@ -308,7 +324,7 @@ instance Phantom f => Comap (Phantom ## f) where comap _ = coerce
 instance Phantom f => Map_ (Phantom ## f) where map_ _ = coerce
 instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
 instance (Phantom f, Append f) => Apply (Phantom ## f) where
-  Phantom fab `ap` Phantom fa = Phantom < phantom $ fab ++ phantom fa
+  Phantom fab `ap` Phantom fa = Phantom < phantom $ fab |.| phantom fa
 deriving via Apply ## Phantom ## f instance (Append f, Phantom f) => Monoidal (,) (Phantom ## f)
 instance (Phantom f, Empty f) => Pure (Phantom ## f) where pure _ = Phantom empty
 instance (Alternative f, Phantom f) => Applicative (Phantom ## f)
@@ -375,6 +391,10 @@ instance P.Traversable f => TraverseC Applicative (Stock ## f) where
   traverseC afb (Stock1 ta) = map_ Stock1 < (\(Applicative x) -> x)
                             $ P.traverse (Applicative < afb) ta
 instance P.Functor f => Map (Stock ## f) where map = P.fmap
+instance P.MonadFix m => MonadFix (Stock ## m) where
+  mfix = Stock1 < P.mfix < coerce
+
+
 data V2 a = V2 {v2a :: a, v2b :: a}
   deriving stock (P.Functor, P.Traversable, P.Foldable)
   deriving (Remap, Map) via Stock ## V2
@@ -414,6 +434,7 @@ instance Pure ((->) x) where pure = (!)
 instance Apply ((->) x) where ap iab ia = \i -> iab i $ ia i
 instance Monoidal (,) ((->) x) where monoidal ia ib = \i -> (ia i, ib i)
 instance Applicative ((->) x)
+instance Monad ((->) x) where bind aib ia = \i -> aib (ia i) i
 
 
 -- []
@@ -424,7 +445,7 @@ instance Empty [] where empty = []
 deriving via (Empty ## []) a instance Nil [a]
 instance Map   [] where map = P.map
 instance Pure  [] where pure a = [a]
-instance Append [] where (++) = (P.++) -- TODO: fix
+instance Append [] where (|.|) = (P.++) -- TODO: fix
 deriving via Append ## [] instance Monoidal E []
 deriving via (Append ## []) a instance Op [a]
 instance Apply [] where ap = (P.<*>) -- TODO: fix
@@ -470,7 +491,7 @@ deriving via Phantom ## K a instance Remap (K a)
 instance c ==> Pure => TraverseC c (K a) where traverseC = phantom_traverseC @c
 instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
-instance Op a => Append (K a) where K a ++ K b = K $ a . b
+instance Op a => Append (K a) where K a |.| K b = K $ a . b
 instance Monoid a => Alternative (K a)
 deriving via Append ## K a instance Op a => Monoidal E (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)

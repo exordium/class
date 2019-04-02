@@ -3,7 +3,6 @@
 {-# language MagicHash #-}
 module Optic where
 import Types
-import TV
 import Impl hiding ((!))
 import Fun
 import Control

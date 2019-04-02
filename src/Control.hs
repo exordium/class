@@ -53,16 +53,16 @@ infixl 3 &&&, ***
 
 
 -- * Promap
-class (forall x. MapRep (p x)) => PromapRep p where
-  {-# minimal promapRep | premapRep,postmapRep #-}
-  promapRep :: (s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
-  promapRep f g = premapRep f > postmapRep g
-  premapRep :: (s =# a) => (s -> a) -> p a t -> p s t
-  premapRep = (`promapRep` \ t -> t)
-  postmapRep :: (b =# t) => (b -> t) -> p s b -> p s t
-  postmapRep = promapRep \ s -> s
+class (forall x. Map_ (p x)) => Promap_ p where
+  {-# minimal promap_ | premap_,postmap_ #-}
+  promap_ :: (s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
+  promap_ f g = premap_ f > postmap_ g
+  premap_ :: (s =# a) => (s -> a) -> p a t -> p s t
+  premap_ = (`promap_` \ t -> t)
+  postmap_ :: (b =# t) => (b -> t) -> p s b -> p s t
+  postmap_ = promap_ \ s -> s
 
-class (forall x. Map (p x), PromapRep p) => Promap p where
+class (forall x. Map (p x), Promap_ p) => Promap p where
   {-# minimal promap | premap,postmap #-}
   promap  :: (s -> a) -> (b -> t) -> p a b -> p s t
   promap f g = premap f > postmap g
@@ -166,8 +166,8 @@ class Prismed p => From p where
   precoerce :: p a x -> p s x
   precoerce = from \ x -> x
 
-class ((forall x y a b . (a =# x,y =# b) => p x y =# p a b),PromapRep p) => Representational2 p
-instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), PromapRep p)=> Representational2 p
+class ((forall x y a b . (a =# x,y =# b) => p x y =# p a b),Promap_ p) => Representational2 p
+instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), Promap_ p)=> Representational2 p
 
 class (Applicative f, Distribute f) => IsI f
 instance (Applicative f, Distribute f) => IsI f
@@ -178,7 +178,7 @@ instance Promap (->) where
   promap  = \f g p s -> g (p (f s))
   premap  = \f p s -> p (f s)
   postmap = \g p a -> g (p a)
-instance PromapRep (->) where promapRep _ _ = coerce
+instance Promap_ (->) where promap_ _ _ = coerce
 {-instance Closed  (->)     where distributed = map; closed f = (f <)-}
 instance Wrap ==> c => TraversedC c (->) where
  traversedC = map
@@ -194,7 +194,7 @@ instance Category (->)
 
 
 
-deriving via (Representational ## Baz c t b) instance MapRep (Baz c t b)
+deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
 deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
@@ -204,7 +204,7 @@ instance  (Map f, Comap f) => IsKK f
 {-instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)-}
 instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)
   => TraverseC c (Baz c t b) where
-     traverseC f (Baz bz) = mapRep Baz_ (unO (bz (\x -> O (remap buy (sell @c) (f x)))))
+     traverseC f (Baz bz) = map_ Baz_ (unO (bz (\x -> O (remap buy (sell @c) (f x)))))
 
 data A; data B
 class C a
@@ -212,15 +212,15 @@ class C a
 instance (c ==> Map, c (Bazaar c a b)) => Map (Bazaar c a b) where
   map f (Bazaar m) = Bazaar (\afb -> map f (m afb))
   {-map f (Bazaar m) = Bazaar (map f < m)-}
-instance c ==> MapRep => MapRep (Bazaar c a b)
-  where mapRep f (Bazaar m) = Bazaar (mapRep f < m)
+instance c ==> Map_ => Map_ (Bazaar c a b)
+  where map_ f (Bazaar m) = Bazaar (map_ f < m)
 instance c ==> Remap => Remap (Bazaar c a b) where
   remap f g (Bazaar m) = Bazaar (\k -> remap f g (m k))
 instance (c (Bazaar c a b), c ==> Pure) => Pure (Bazaar c a b) where
   pure t = Bazaar (pure t!)
 
 instance (c (Bazaar c a b), c ==> Apply) => Apply (Bazaar c a b) where
-  Bazaar afbfxy |$| Bazaar afbfx = Bazaar \ afb -> afbfxy afb |$| afbfx afb
+  Bazaar afbfxy `ap` Bazaar afbfx = Bazaar \ afb -> afbfxy afb |$| afbfx afb
 instance (c (Bazaar c a b), c ==> Applicative) => Applicative (Bazaar c a b)
 instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where
   bind abz (Bazaar xmyma) = Bazaar \ xmy ->
@@ -232,8 +232,8 @@ instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where
     
 
 
-{-instance {-# Overlappable #-} Promap p => PromapRep p where-}
-  {-promapRep _ _ !p = promap coerce coerce p-}
+{-instance {-# Overlappable #-} Promap p => Promap_ p where-}
+  {-promap_ _ _ !p = promap coerce coerce p-}
 -- |A @Pure f@ distributes through Sum types:
 --  http://r6research.livejournal.com/28338.html
 {-instance {-# Overlappable #-} (Pure t, Zero x) => One (t x) where one = pure zero-}
@@ -260,29 +260,28 @@ instance {-# overlappable #-} (Arrow p, ArrowChoice p) => P.ArrowChoice p where
     where either2e = \case P.Left a -> L a; P.Right b -> R b
 
 
-data family (###) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
 
 newtype instance (Promap ### p) a b = Promap (p a b)
   deriving newtype Promap
-  deriving (Remap,MapRep) via (Promap ### p) a
+  deriving (Remap,Map_) via (Promap ### p) a
 instance Promap p => Map ((Promap ### p) a) where map f (Promap p) = Promap (postmap f p)
-instance Promap p => PromapRep (Promap ### p) where
-  promapRep _ _ !p = promap coerce coerce p
-  premapRep _ !p = premap coerce p
-  postmapRep _ !p = postmap coerce p
+instance Promap p => Promap_ (Promap ### p) where
+  promap_ _ _ !p = promap coerce coerce p
+  premap_ _ !p = premap coerce p
+  postmap_ _ !p = postmap coerce p
 
-newtype instance (PromapRep ### p) a b = PromapRep (p a b)
-  deriving newtype PromapRep
-instance PromapRep p => MapRep ((PromapRep ### p) a) where
-  mapRep f (PromapRep p) = PromapRep (postmapRep f p)
+newtype instance (Promap_ ### p) a b = Promap_ (p a b)
+  deriving newtype Promap_
+instance Promap_ p => Map_ ((Promap_ ### p) a) where
+  map_ f (Promap_ p) = Promap_ (postmap_ f p)
 
 newtype instance (Representational2 ### p) a b = Representational2 (p a b)
-  deriving MapRep via (PromapRep ### p) a
-instance Representational2 p => PromapRep (Representational2 ### p)
-  where promapRep  _ _ = coerce
+  deriving Map_ via (Promap_ ### p) a
+instance Representational2 p => Promap_ (Representational2 ### p)
+  where promap_  _ _ = coerce
 
 {-newtype Ar a b = Ar (a -> b)-}
-  {-deriving newtype (Promap, PromapRep, MapRep)-}
+  {-deriving newtype (Promap, Promap_, Map_)-}
   {-deriving (Map) via Promap ### Ar a-}
 
 
@@ -302,5 +301,5 @@ instance Representational2 p => PromapRep (Representational2 ### p)
     {-instance TraverseC IsI ($p [tv|x|]) where traverseC = map_traverseC-}
     {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
     {-instance Remap  ($p [tv|x|]) where remap _  = map-}
-    {-instance MapRep  ($p [tv|x|]) where mapRep = remap_mapRep-}
-   {-|]-}
+    {-instance Map_  ($p [tv|x|]) where map_ = remap_map_-}
+--    |] 

@@ -4,7 +4,7 @@ import GHC.Types
 import Type.I
 import Type.K
 import Functor
-import Types (type (==>))
+import Types
 import Fun (coerce#)
 
 -- * @Baz@
@@ -26,14 +26,14 @@ buy (Bazaar f) = unK (f K)
 --
 -- * @O@
 newtype O (f :: * -> *) (g :: * -> *) a = O {unO :: f (g a)}
-instance (Representational f, Map f, Representational g, Map g) => Map (O f g)
+instance ((Representational & Map) f, (Representational & Map) g) => Map (O f g)
   where map f (O fg) = O (map f $@ fg)
-instance (Representational f, Representational g) => MapRep (O f g)
-  where mapRep _ = coerce#
-{-deriving via Remap ## O f g instance (Remap f, Remap g) => MapRep (O f g)-}
-instance (Representational f, Remap f, Representational g, Remap g) => Remap (O f g)
+instance (Representational f, Representational g) => Map_ (O f g)
+  where map_ _ = coerce#
+{-deriving via Remap ## O f g instance (Remap f, Remap g) => Map_ (O f g)-}
+instance ((Representational & Remap) f, (Representational & Remap) g) => Remap (O f g)
   where remap f g (O fg) = O (remap (remap g f) (remap f g) fg)
-instance (TraverseC c f, Representational f
-         ,TraverseC c g, Representational g
-         ,c ==> MapRep) => TraverseC c (O f g) where
+instance ((TraverseC c & Representational) f
+         ,(TraverseC c & Representational) g
+         ,c ==> Map_) => TraverseC c (O f g) where
   traverseC f (O fg) = O #@ traverseC @c (traverseC @c f) fg

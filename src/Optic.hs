@@ -23,8 +23,8 @@ set l b s = l (\_ -> b) s
 -- * GRATE
 
 newtype Grate a b s t = Grate {runGrate :: (((s -> a) -> b) -> t)}
-  deriving (MapRep,Remap,Map) via (Promap ### Grate a b) s
-  deriving (PromapRep)                       via (Promap ### Grate a b)
+  deriving (Map_,Remap,Map) via (Promap ### Grate a b) s
+  deriving (Promap_)                       via (Promap ### Grate a b)
 instance Promap (Grate a b) where
   promap sa bt (Grate aabb) = Grate \ sab -> bt $ aabb \ aa -> sab \ s -> aa (sa s)
 instance Closed (Grate a b) where
@@ -51,30 +51,30 @@ zipOf g reduce fs = g grate0 `runGrate` \get -> reduce (map get fs)
 -- * ZIP2
 
 newtype Zip2 a b = Zip2 {runZip2 :: a -> a -> b}
-  deriving (MapRep,Remap,Map) via (Promap ### Zip2) a
+  deriving (Map_,Remap,Map) via (Promap ### Zip2) a
   deriving (Monoidal (,)) via Apply ## Zip2 a
-  deriving PromapRep via Representational2 ### Zip2
+  deriving Promap_ via Representational2 ### Zip2
   deriving anyclass Applicative
 instance Promap Zip2 where promap f g (Zip2 z) = Zip2 \ a a' -> g (z (f a) (f a'))
 instance Closed Zip2 where closed (Zip2 z) = Zip2 \ xa xa' x -> z (xa x) (xa' x)
-instance Apply (Zip2 x) where Zip2 xxab |$| Zip2 xxa = Zip2 \ x x' -> xxab x x' (xxa x x')
+instance Apply (Zip2 x) where Zip2 xxab `ap` Zip2 xxa = Zip2 \ x x' -> xxab x x' (xxa x x')
 instance Pure (Zip2 x) where pure a = Zip2 \ _ _ -> a
 
-_Zip2_ :: forall p a b s t. PromapRep p => Zip2 a b `p` Zip2 s t -> (a -> a -> b) `p` (s -> s -> t)
-_Zip2_ = promapRep Zip2 runZip2
+_Zip2_ :: forall p a b s t. Promap_ p => Zip2 a b `p` Zip2 s t -> (a -> a -> b) `p` (s -> s -> t)
+_Zip2_ = promap_ Zip2 runZip2
 
 -- * ISO
 
 data Iso a b s t = Iso (s -> a) (b -> t)
-  deriving (MapRep,Remap,Map) via (Promap ### (Iso a b)) s
-  deriving PromapRep via Promap ### Iso a b
+  deriving (Map_,Remap,Map) via (Promap ### (Iso a b)) s
+  deriving Promap_ via Promap ### Iso a b
 instance Promap (Iso a b) where promap f g (Iso sa bt) = Iso (f > sa) (g < bt)
 
 repIso :: (forall p. Promap p => p a b -> p s t) -> Iso a b s t
 repIso p = p (Iso (\a -> a) (\b -> b))
 
-_coerce_ :: forall s t a b p. (PromapRep p, s =# a, b =# t ) => p a b -> p s t
-_coerce_ = promapRep coerce coerce
+_coerce_ :: forall s t a b p. (Promap_ p, s =# a, b =# t ) => p a b -> p s t
+_coerce_ = promap_ coerce coerce
 
 
 -- * Traversing
@@ -83,7 +83,7 @@ newtype Traversing f a (b :: *) = Traversing {runTraversing :: a -> f b}
   deriving (Map) via (Promap ### Traversing f) a
 -- | Lift an f-operation over the target of a traversal
 _Traversing_ :: (Traversing f a b -> Traversing f s t) -> (a -> f b) -> s -> f t
-_Traversing_ = promapRep Traversing runTraversing
+_Traversing_ = promap_ Traversing runTraversing
 
 (@@~) :: (Traversing f a b -> Traversing f s t) -> (a -> f b) -> s -> f t
 (@@~) = _Traversing_
@@ -92,11 +92,11 @@ instance Map f => Promap (Traversing f)
   where promap f g (Traversing s) = Traversing (promap f (map     g) s)
 instance Remap f => Remap (Traversing f a)
   where remap f g (Traversing s) = Traversing (remap f g < s)
-instance MapRep f => MapRep (Traversing f a)
-  where mapRep f (Traversing s) = Traversing (mapRep f < s)
-instance MapRep f => PromapRep (Traversing f) where
-  premapRep _ = coerce
-  postmapRep _ (Traversing afb) = Traversing $ afb > mapRep coerce
+instance Map_ f => Map_ (Traversing f a)
+  where map_ f (Traversing s) = Traversing (map_ f < s)
+instance Map_ f => Promap_ (Traversing f) where
+  premap_ _ = coerce
+  postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
 instance (Map ==> c, Map f) => TraversedC c (Traversing f) where
@@ -109,8 +109,8 @@ _Just = prism (\case {Nothing -> L Nothing; Just a -> R a}) Just
 
 data Prism a b s t = Prism (s -> E t a) (b -> t)
   deriving (Map,Remap) via (Promap ### Prism a b) s
-  deriving PromapRep via Representational2 ### Prism a b
-  deriving MapRep via (Representational2 ### Prism a b) s
+  deriving Promap_ via Representational2 ### Prism a b
+  deriving Map_ via (Representational2 ### Prism a b) s
 _Prism_ :: (Prism a b a b -> Prism a b s t) -> ((s -> E t a) -> (b -> t) -> r) -> r
 _Prism_ l k = case l (Prism R \ x -> x) of Prism h g -> k h g
 
@@ -138,10 +138,10 @@ instance Prismed (Prism a b) where
 
 newtype View r a (b :: *) = View {runView :: a -> r}
   deriving (Map, Remap) via (Promap ### View r) a
-  deriving MapRep via Representational ## View r a
-  deriving PromapRep via Representational2 ### View r
-_View_ :: PromapRep p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
-_View_ = promapRep View runView
+  deriving Map_ via Representational ## View r a
+  deriving Promap_ via Representational2 ### View r
+_View_ :: Promap_ p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
+_View_ = promap_ View runView
 
 instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
 instance c (K m) => TraversedC c (View m) where

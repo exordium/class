@@ -30,3 +30,4 @@ library
   build-depends: base, template-haskell, named, impl, ghc-prim, church
                , containers
                , bytestring
+               , finite-typelits

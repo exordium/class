@@ -10,6 +10,9 @@ import qualified Numeric.Natural as P
 import Fun
 
 data family (#) (c :: * -> Constraint) :: * -> *
+data family (##) (c :: (* -> *) -> Constraint) :: (* -> *) -> * -> *
+data family (###) (c :: (* -> * -> *) -> Constraint) :: (* -> * -> *) -> * -> * -> *
+infixr #, ##, ###
 
 class Eq' a where
   {-# minimal eq' | comparable, eq #-}
@@ -57,6 +60,14 @@ class Eq' a => Ord' a where
   comparable' :: a -> a -> Bool
   comparable' a b = (a <= b) P.|| (b <= a)
 
+-- * ord operators in prefix position
+leq' a = (<=? a)
+leq a = (<= a)
+le a = (<! a)
+ge a = (>! a)
+geq' a = (>=? a)
+geq a = (>= a)
+
 instance Eq' a => Eq' [a] where
   eq' [] [] = Just True
   eq' (x:xs) (y:ys) | eq x y = eq' xs ys
@@ -65,15 +76,14 @@ instance Eq' a => Eq' [a] where
 class Ord' a => Ord a where ord :: a -> a -> Ordering
 
 -- | prop> a . a = a
-class Semigroup a => Idempotent a
+class Op a => Idempotent a
 -- | prop> a . b = b . a
-class Semigroup a => Commutative a
+class Op a => Commutative a
 
-
-newtype Op a = Op a
+newtype Co a = Co a
   deriving newtype (Eq')
   deriving stock (P.Show)
-instance Ord' a => Ord' (Op a) where
+instance Ord' a => Ord' (Co a) where
   (<=) = coerce ((>=) @a)
   (>=) = coerce ((<=) @a)
   (<=?) = coerce ((>=?) @a)
@@ -91,18 +101,20 @@ instance Ord' a => Ord' (Op a) where
 -- prop> forall x. (x <= a, x <= b) => x <= (a . b)
 class (Idempotent a, Commutative a, Ord' a) => Semilattice a
 
-
 class Ord' a => Meet a where (/\) :: a -> a -> a
 class Ord' a => Join a where (\/) :: a -> a -> a
 class Meet a => Top a where top :: a
 class Join a => Bot a where bot :: a
 
+meet a = (/\ a)
+join a = (\/ a)
+
 newtype instance Meet # a = Meet a deriving newtype (Meet, Ord',Eq')
-instance Meet a => Semigroup (Meet # a) where (.) = (/\)
+instance Meet a => Op (Meet # a) where (.) = (/\)
 
 -- |Absorption: a \/ (a /\ b) == a /\ (a \/ b) == a
 -- Implies: top \/ a = top, bottom /\ a = bottom
-class (Semilattice a, Semilattice (Op a)) => Lattice a
+class (Semilattice a, Semilattice (Co a)) => Lattice a
 -- | top /\ a = a
 {-class Meet a => Top a where top :: a-}
 -- | bottom \/ = a
@@ -122,16 +134,17 @@ class (Inv a, Act a x) => Diff a x where
   default diff :: (x ~ a, Inv a) => x -> x -> a
   diff a b = a `act` inv b
 
-
-class Act a a => Semigroup a where
+class Act a a => Op a where
   (.) :: a -> a -> a
   scale1 :: P.Natural -> a -> a
   scale1 n = scale1# (n P.+ 1) 
-instance {-# overlappable #-} Semigroup a => Act a a where act = (.)
+instance {-# overlappable #-} Op a => Act a a where act = (.)
+op :: Op a => a -> a -> a
+op a = (. a)
 
-class Semigroup a => Act a s where act :: a -> s -> s
+class Op a => Act a s where act :: a -> s -> s
 class Nil a where nil :: a
-class (Semigroup a, Nil a) => Monoid a where
+class (Op a, Nil a) => Monoid a where
   scale0 :: P.Natural -> a -> a
   scale0 0 = \_ -> nil
   scale0 n = scale1# n
@@ -175,14 +188,14 @@ scale1# y0 x0 = f x0 y0 where
 
 
 instance Rg r => Act (Mul r) (Mul r) where act (Mul a) (Mul b) = Mul (scale a b)
-instance Rg r => Semigroup (Mul r) where Mul a . Mul b = Mul (scale a b)
+instance Rg r => Op (Mul r) where Mul a . Mul b = Mul (scale a b)
 
 
 -- | A near semiring (bi)module
 -- (r*s)a = r(sa)
 -- r(as) = (ra)s
 -- (r+s)a = ra + sa
-class (Rg r, Semigroup a) => Scale r a where scale :: r -> a -> a
+class (Rg r, Op a) => Scale r a where scale :: r -> a -> a
 
 newtype Add a = Add a
   deriving newtype P.Num
@@ -196,7 +209,7 @@ one = coerce (nil @(Mul a))
 
 
 {--- * Instances-}
-instance Semigroup () where _ . _ = ()
+instance Op () where _ . _ = ()
 instance Act    () () where _ `act` _ = ()
 instance Nil       () where nil = ()
 instance Monoid    ()
@@ -209,13 +222,13 @@ deriving via Stock # () instance Join ()
 deriving via Stock # () instance Top ()
 deriving via Stock # () instance Bot ()
 
-instance Semigroup [x] where (.) = coerce ((P.++) @x)
+instance Op [x] where (.) = coerce ((P.++) @x)
 instance Act [x] [x]  where act = (P.++)
 instance Nil [x]     where nil = []
 {-instance Monoid (Add [x])-}
-instance Semigroup a => Scale [a] [a] where
+instance Op a => Scale [a] [a] where
   scale as bs = [ a . b | a <- as, b <- bs]
-instance Semigroup a  => Rg [a]
+instance Op a  => Rg [a]
 {-instance Act a s => Act  (Mul [a]) (Mul [s]) where-}
   {-act (Mul as) (Mul bs) = Mul [a `act` b | a <- as, b <- bs]-}
 {-instance Nil a => Nil (Mul [a]) where nil = Mul [nil]-}
@@ -235,6 +248,10 @@ instance P.Ord a => Meet (Stock # a) where (/\) = coerce (P.max @a)
 instance P.Ord a => Join (Stock # a) where (\/) = coerce (P.min @a)
 instance (P.Ord a, P.Bounded a) => Top (Stock # a) where top = coerce (P.maxBound @a)
 instance (P.Ord a, P.Bounded a) => Bot (Stock # a) where bot = coerce (P.minBound @a)
+
+instance {-# overlappable #-} P.Num a => Op (Stock # a) where (.) = coerce ((P.+) @a)
+instance {-# overlappable #-} P.Num a => Nil (Stock # a) where nil = Stock0 $ P.fromInteger 0
+instance {-# overlappable #-} P.Num a => Monoid (Stock # a)
 
 instance P.Ord a => Ord' (Stock # a) where
   (<=) = coerce ((P.<=) @a)
@@ -256,3 +273,10 @@ newtype instance Ord # a = Ord a
   deriving anyclass Eq
   deriving Eq' via Ord' # a
 instance Ord a => Ord' (Ord # a) where ord' a b = Just (ord a b)
+
+
+
+-- * Instances
+deriving via Stock # Int instance Op Int
+deriving via Stock # Int instance Nil Int
+deriving via Stock # Int instance Monoid Int

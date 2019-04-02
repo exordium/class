@@ -114,3 +114,10 @@ coerce :: b =# a => a -> b
 coerce = GHC.coerce; {-# INLINE coerce #-}
 (#) :: forall a b. (a =# b) => (a -> b) -> a -> b
 (#) _ = GHC.coerce @a @b
+--
+-- | Representational Equality on functors
+class    (forall a. f a =# g a) => f #=# g
+instance (forall a. f a =# g a) => f #=# g
+coerce1 :: forall g f a. f #=# g => f a -> g a
+coerce1 = GHC.coerce
+

@@ -10,3 +10,4 @@ instance (c a, c' a) => (c & c') a
 
 class Stock (a :: k)
 instance Stock (a :: k)
+

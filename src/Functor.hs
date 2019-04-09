@@ -23,10 +23,13 @@ import qualified Data.Map as PM
 
 -- * Classes
 
-class Map_ f => Remap f where remap :: (b -> a) -> (a -> b) -> f a -> f b
+class Map_ f => Remap f where
+  remap :: (b -> a) -> (a -> b) -> f a -> f b
+  {-map__ :: (a =# b) => (Representational f => f a -> f b) -> (a -> b) -> f a -> f b-}
+  {-map__ _ _ !x = remap coerce coerce x-}
 instance {-# overlappable #-} Remap f => Map_ f where map_ _ !x = remap coerce coerce x
-newtype instance (Remap ## f) a = Remap (f a) deriving newtype Remap
-instance Remap f => Map_ (Remap ## f) where map_ f !x = remap coerce f x
+newtype instance (Remap ## f) a = Remap (f a)
+instance Remap f => Map_ (Remap ## f) where map_ f (Remap (!x)) = Remap $ remap coerce f x
 -- | Every haskell functor is Strong
 strong :: Remap f => a -> f b -> f (a,b)
 strong a = remap (\(_,b) -> b) (a,)
@@ -39,9 +42,7 @@ instance {-# overlappable #-} (c ==> Wrap, Map f) => TraverseC c f where
   traverseC f = pure < map (unwrap < f)
 instance {-# overlappable #-} (Map f, Map_ f) => Remap f where remap _ = map
 newtype instance (Map ## f) a = Map (f a) deriving newtype Map
-instance Map f => P.Functor (Map ## f) where fmap = map
-instance (c ==> Wrap, Map f) => TraverseC c (Map ## f) where
-  traverseC afb (Map ta) = pure < Map $ map (afb > unwrap) ta
+instance Map f => P.Functor (Map ## f) where fmap f = coerce (map @f f)
 ($@) :: Map f => (a -> b) -> f a -> f b
 ($@) = map
 (!@) :: Map f => b -> f a -> f b
@@ -160,7 +161,7 @@ instance (Pure f, Nil a) => Nil ((Pure ## f) a) where nil = Pure $ pure nil
 --   prop> ff |$| pure a = map ($ a) ff
 class (Map f, Pure f, Apply f) => Applicative f
 newtype instance (Applicative ## f) a = Applicative (f a)
-  deriving newtype (Applicative,Pure,Apply)
+  deriving newtype (Pure,Apply)
   deriving (P.Functor) via Map ## Applicative ## f
   deriving Op via (Apply ## f) a
   deriving Nil via (Pure ## f) a
@@ -171,7 +172,8 @@ instance Applicative f => P.Applicative (Applicative ## f) where
 instance (Applicative f, Monoid a) => Monoid ((Applicative ## f) a)
 instance (Applicative f, Rg a) => Rg ((Applicative ## f) a) where
   (*) = coerce (liftA2 @f @a (*))
-
+instance (c ==> Distribute, Map f) => TraverseC c (Map ## f) where
+  traverseC afb (Map ta) = map_ Map < distribute @_ @f $ map @f afb ta
 -- | distribute < imap (imap < iab) = imap (imap < flip iab) < distribute
 class Monad t => Distribute t where
   distribute :: Map f => f (t a) -> t (f a)
@@ -212,16 +214,16 @@ class Remap f => FZero f where
 class (FZero f, Map f) => Empty f where
   empty :: f a
   empty = map absurd fzero
-newtype instance (Empty ## f) a = Empty (f a) deriving newtype (Empty,Map)
-instance Empty f => FZero (Empty ## f) where fzero = empty
-instance Empty f => Nil ((Empty ## f) a) where nil = empty
+newtype instance (Empty ## f) a = Empty (f a) deriving newtype (Map)
+instance Empty f => FZero (Empty ## f) where fzero = Empty empty
+instance Empty f => Nil ((Empty ## f) a) where nil = Empty empty
 
 class (Append f, Empty f) => Alternative f
 
 -- | (fa ++ fb) `monoidal` fc = (fa `monoidal` fc) ++ (fb `monoidal` fc)
 class (Append f, Apply f) => Rg1 f
 newtype instance (Rg1 ## f) a = Rg1 (f a)
-  deriving newtype (Rg1, Append, Apply,Map,Op, Map_)
+  deriving newtype (Append, Apply,Map,Op, Map_)
 deriving newtype instance Rg1 f => Monoidal E (Rg1 ## f)
 deriving newtype instance Rg1 f => Monoidal (,) (Rg1 ## f)
 {-instance (Rg1 f, Op a) => Rg ((Rg1 ## f) a) where (*) = liftA2 (.)-}
@@ -230,9 +232,9 @@ deriving newtype instance Rg1 f => Monoidal (,) (Rg1 ## f)
 class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
   (|.|) :: f a -> f a -> f a
   (|.|) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
-newtype instance (Append ## f) a = Append (f a) deriving newtype (Append, Map)
+newtype instance (Append ## f) a = Append (f a) deriving newtype (Map)
 instance {-# overlappable #-} Append f => Monoidal E f where monoidal fa fb = map L fa |.| map R fb
-instance Append f => Op ((Append ## f) a) where (.) = (|.|)
+instance Append f => Op ((Append ## f) a) where Append f . Append g = Append (f |.| g)
 append a = (|.| a)
 
 -- * Contravariant Functors
@@ -510,7 +512,6 @@ instance Monoid [a]
 instance Map   [] where map = P.map
 instance Pure  [] where pure a = [a]
 instance Append [] where (|.|) = (P.++) -- TODO: fix
-deriving via Append ## [] instance Monoidal E []
 deriving via (Append ## []) a instance Op [a]
 instance Apply [] where ap = (P.<*>) -- TODO: fix
 instance Rg1 []
@@ -571,7 +572,6 @@ instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
 instance Op a => Append (K a) where K a |.| K b = K $ a . b
 instance Monoid a => Alternative (K a)
-deriving via Append ## K a instance Op a => Monoidal E (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)
 deriving via Phantom ## K a instance Op a => Apply (K a)
 deriving via Phantom ## K a instance Nil a => Pure (K a)

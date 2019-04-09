@@ -194,7 +194,6 @@ instance Category (->)
 
 
 deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
-deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 class (Map f, Comap f) => IsKK f

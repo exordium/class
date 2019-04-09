@@ -286,26 +286,12 @@ infixr 1 =<<, >=>
 class Monad m => MonadFix m where mfix :: (a -> m a) -> m a
 -- | imap f . imap g = imap (\i -> f i . g i)
 --   imap (\_ -> f) = map f
-class Map f => IMap i f | f -> i where
-  {-# minimal imap #-}
-  imap :: (i -> a -> b) -> f a -> f b
-  adjust :: Eq' i => (a -> a) -> i -> f a -> f a
-  adjust f i = imap (\i' a -> if i `eq` i' then f a else a)
-indexed :: IMap i f => f a -> f (i,a)
-indexed = imap (,)
-
-class IMap i f => IPure i f where ipure :: i -> a -> f a
-deriving via Stock ## PM.Map k instance Map (PM.Map k)
-instance IMap k (PM.Map k) where imap = PM.mapWithKey
-instance IPure k (PM.Map k) where ipure = PM.singleton
 
 -- | @f@ is a Monad-Module over @m@
 class (Monad m, Map f) => Bound m f where
   bound :: (a -> m b) -> f a -> f b
   joined :: f (m a) -> f a
   joined = bound id
-  ibound :: IMap i f => (i -> a -> m b) -> f a -> f b
-  ibound iamb = joined < imap iamb
 instance {-# overlappable #-} Monad m => Bound m m where bound = bind
 
 -- @filter@ must match default implementation
@@ -315,10 +301,6 @@ class Bound Maybe f => Filter f where
   filter f = bound \ a -> case f a of {False -> Nothing; True -> Just a}
   partition :: (a -> Bool) -> f a -> (f a, f a)
   partition f fa = (filter f fa, filter (P.not < f) fa)
-  splitAt :: (Ord i, IMap i f) => i -> f a -> (f a, f a)
-  splitAt i fa = let (x,y) = partition (\(i',_) -> i' <! i) (imap (,) fa)
-                     snd = map \ (_,a) -> a
-                 in (snd x, snd y)
 instance {-# overlappable #-} Bound Maybe f => Filter f
 
 class (Filter f, Monoidal These f) => Align f where
@@ -502,7 +484,6 @@ instance Align (Partial x) where
   alignWith this that these (Partial f) (Partial g) =
     Partial \ x -> alignWith this that these (f x) (g x)
 
-
 -- []
 deriving via Empty            ## [] instance FZero []
 deriving via Representational ## [] instance Map_ []
@@ -521,10 +502,6 @@ instance (c ==> Applicative) => TraverseC c [] where
     go = \case
       [] -> pure []
       a : as -> (:) $@ f a |$| go as
-instance IMap P.Int [] where
-  imap f = go 0 where
-    go _ [] = []
-    go i (a:as) = f i a : go (P.succ i) as
 instance Bound Maybe [] where
   bound f = go where
     go [] = []
@@ -586,4 +563,3 @@ instance Apply P.IO where ap = (P.<*>)
 instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Representational ## P.IO instance Map_ P.IO
-

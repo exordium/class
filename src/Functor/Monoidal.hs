@@ -40,3 +40,4 @@ instance Append []
 instance Monoidal These [] where monoidal = list'align
 
 instance Monoidal (,) ((->) x) where monoidal xa xb = \x -> (xa x, xb x)
+

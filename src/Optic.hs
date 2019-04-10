@@ -34,7 +34,7 @@ instance Closed (Grate a b) where
 withGrate :: (Grate a b a b -> Grate a b s t) -> ((s -> a) -> b) -> t
 withGrate g = case g (Grate (\f -> f (\x -> x))) of Grate z -> z
 
-cloneGrate :: forall c p a b s t. Closed p => (Grate a b a b -> Grate a b s t) -> p a b -> p s t
+cloneGrate :: forall p a b s t. Closed p => (Grate a b a b -> Grate a b s t) -> p a b -> p s t
 cloneGrate g = grate (withGrate g)
 
 zipOf' :: Map f => Grate a b s t -> (f a -> b) -> f s -> t
@@ -110,7 +110,8 @@ instance Map_ f => Promap_ (Traversing f) where
   postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
-instance (c f, c ==> Map) => TraversedC c (Traversing f) where
+instance Map f => TraversedC (Traversing f) where
+  type C (Traversing f) = Map
   traversalC afbsft (Traversing afb) = Traversing (afbsft afb)
 
 -- * PRISM
@@ -159,7 +160,8 @@ _View_ :: Promap_ p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
 _View_ = promap_ View runView
 
 instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
-instance c (K m) => TraversedC c (View m) where
+instance TraversedC (View m) where
+  type C (View m) = Map & Comap
   traversalC akmskm (View am) = View (unK < akmskm (K < am))
 
 newtype Review (a :: *) b = Review {runReview :: b}
@@ -185,7 +187,8 @@ doWith l afx = case l < Do $ FK < afx of Do sfkx -> sfkx > \case FK fx -> fx
 doFor :: Map f => (Do (FK f x) x a b -> Do (FK f x) x s t) -> s -> (a -> f x) -> f x
 doFor l s = doWith l .$ s
 
-instance c (K (f r)) => TraversedC c (Do f r) where
+instance TraversedC (Do f r) where
+  type C (Do f r) = Map & Comap
   traversalC afbsft (Do afr) = Do (unK < (afbsft (K < afr)))
 
 newtype FK f a b = FK {runFK :: f a}
@@ -213,7 +216,8 @@ instance Promap (Update b) where promap f g (Update bst) = Update \ b -> f > bst
 instance Closed (Update b) where closed (Update bst) = Update \ b xs x -> bst b (xs x)
 instance Prismed (Update b) where
   prism seta bt (Update bab) = Update \ b -> seta > (id ||| (bab b > bt))
-instance Wrap ==> c => TraversedC c (Update b) where
+instance TraversedC (Update b) where
+  type C (Update b) = Wrap
   traversalC afbsft (Update bab) = Update \ b -> unI < afbsft (I < bab b)
 
 _Update_ :: Promap_ p => Update x a b `p` Update x s t -> (x -> a -> b) `p` (x -> s -> t)

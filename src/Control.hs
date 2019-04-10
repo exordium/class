@@ -41,7 +41,7 @@ p <<< q = compose q p
 class (Category p, Promap p) => Arr p where
   arr :: (a -> b) -> p a b
   arr = (identity ^>)
-class (Arr p, TraversedC Map p) => Arrow p where
+class (Arr p, TraversedC p, C p ~ Map) => Arrow p where
   (***) :: p x a -> p y b -> p (x,y) (a,b)
   p *** q = _1 p >>> _2 q
   (&&&) :: p x a -> p x b -> p x (a,b)
@@ -110,54 +110,55 @@ class Promap p => Closed p where
 {-(*/) = for_ @Mul1-}
 
 
-cocollect :: forall c f t a b. (TraverseC c t, c ==> Map, c f)
+cocollect :: forall f t a b. (TraverseC Map t, Map f)
           => (t a -> b) -> t (f a) -> f b
-cocollect tab tfa = map tab (sequence @c tfa)
+cocollect tab tfa = map tab (sequence @Map tfa)
 
-type Mapped = TraversedC Wrap
-type Lensed = TraversedC Map
+type Mapped p = (TraversedC p, C p ~ Wrap)
+type Lensed p = (TraversedC p, C p ~ Map)
+type Traversed p = (TraversedC p, C p ~ Applicative)
+type Traversed1 p = (TraversedC p, C p ~ Apply)
+type Traversed0 p = (TraversedC p, C p ~ Pure)
 
-class Promap p => TraversedC (c :: (* -> *) -> Constraint) p where
-  traversedC :: TraverseC c t => p a b -> p (t a) (t b)
-  traversedC = traversalC @c (traverseC @c)
-  traversalC :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
+class Promap p => TraversedC p where
+  type C p :: (* -> *) -> Constraint
+  traversedC :: TraverseC (C p) t => p a b -> p (t a) (t b)
+  traversedC = traversalC (traverseC @(C p))
+  traversalC :: (forall f. C p f => (a -> f b) -> s -> f t) -> p a b -> p s t
   {-default traversalC :: (forall ff bb aa. c ff => c (O ff (Bazaar c bb aa))-}
                        {-,c I , c (Baz c t b))-}
                     {-=> (forall f. c f => (a -> f b) -> s -> f t)-}
                     {--> p a b -> p s t-}
   {-traversalC f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversedC @c pab)-}
-  mapping :: c ~ Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
-  mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
-  mapped :: c ~ Wrap => Map f => p a b -> p (f a) (f b)
+  mapping :: C p ~ Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
+  mapping abst = traversalC \ afb -> abst (afb > unwrap) > pure
+  mapped :: C p ~ Wrap => Map f => p a b -> p (f a) (f b)
   mapped = mapping map
 
-  lens :: c ~ Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
-  lens get set = traversalC @Map \ afb s -> set s `map` afb (get s)
-  _2 :: c ~ Map => p a b -> p (x,a) (x,b)
-  _2 = traversedC @Map
-  _1 :: c ~ Map => p a b -> p (a,x) (b,x)
+  lens :: C p ~ Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
+  lens get set = traversalC \ afb s -> set s `map` afb (get s)
+  _2 :: C p ~ Map => p a b -> p (x,a) (x,b)
+  _2 = traversedC
+  _1 :: C p ~ Map => p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
-mapping_traversal :: (Wrap ==> c, TraversedC Wrap p)
-                  => (forall f. c f => (a -> f b) -> s -> f t)
+mapping_traversal :: (C p ~ Wrap, TraversedC p)
+                  => (forall f. Wrap f => (a -> f b) -> s -> f t)
                   -> p a b -> p s t
 mapping_traversal afbsft = mapping \ ab -> unI < afbsft (I < ab)
 
 
-traversal :: TraversedC Applicative p
+traversal :: (TraversedC p, C p ~ Applicative)
           => (forall f. Applicative f => (a -> f b) -> s -> f t) -> p a b -> p s t
-traversal = traversalC @Applicative
+traversal = traversalC
 
-traversed :: (TraversedC Applicative p, TraverseC Applicative t) => p a b -> p (t a) (t b)
-traversed = traversedC @Applicative
-
-lens_traversal :: (Map ==> c, TraversedC Map p)
-               => (forall f. c f => (a -> f b) -> s -> f t)
+lens_traversal :: (TraversedC p, C p ~ Map)
+               => (forall f. Map f => (a -> f b) -> s -> f t)
                -> p a b -> p s t
 lens_traversal f = lens (f K > unK) (f \ _ -> id)
 
 
-lens0 :: (Prismed p, TraversedC Map p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
+lens0 :: (Prismed p, TraversedC p, C p ~ Map) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
 
 -- | 'Closed' over @(~) (E x))@
@@ -195,9 +196,10 @@ instance Promap (->) where
 instance Promap_ (->) where promap_ _ _ = coerce
 instance Closed  (->)     where distributed = map; closed f = (f <)
 {-instance Wrap ==> c => TraversedC c (->) where-}
-instance TraversedC Wrap (->) where
+instance TraversedC (->) where
+ type C (->) = Wrap
  traversedC = map
- traversalC = mapping_traversal @Wrap
+ traversalC = mapping_traversal
  {-traversalC l f s = case l (\a -> I (f a)) s of {I t -> t} -}
  lens sa sbt ab = \s -> sbt s (ab (sa s))
  mapping = id
@@ -222,9 +224,6 @@ instance  (Map f, Comap f) => IsKK f
 instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)
   => TraverseC c (Baz c t b) where
      traverseC f (Baz bz) = map_ Baz_ (unO (bz (\x -> O (remap buy (sell @c) (f x)))))
-
-data A; data B
-class C a
 
 instance (c ==> Map, c (Bazaar c a b)) => Map (Bazaar c a b) where
   map f (Bazaar m) = Bazaar (\afb -> map f (m afb))
@@ -262,7 +261,7 @@ class a ~ E (Left a) (Right a) => IsEither' a
 instance a ~ E (Left a) (Right a) => IsEither' a
 
 
-instance {-# overlappable #-} (Arr p, TraversedC Map p) => Arrow p
+instance {-# overlappable #-} (Arr p, TraversedC p, C p ~ Map) => Arrow p
 instance {-# overlappable #-} (Arr p, Prismed p) => ArrowChoice p
 
 type Category# = PC.Category
@@ -292,8 +291,9 @@ newtype instance (Arrow ### p) a b = Arrow (p a b)
   deriving (Arr,Category,Compose,Identity,Promap,Promap_) via Arr ### p
   deriving (Map,Remap,Map_) via (Arr ### p) a
 
-instance (Map ==> c, Arrow p) => TraversedC c (Arrow ### p) where
-  traversalC = lens_traversal @Map
+instance (Arrow p) => TraversedC (Arrow ### p) where
+  type C (Arrow ### p) = Map
+  traversalC = lens_traversal
   lens sa sbt pab = arr (\s -> (sbt s,sa s))  >>> (identity *** pab) >>> arr (\(f,a) -> f a)
   _1 = (*** identity)
   _2 = (identity ***)

@@ -51,6 +51,7 @@ zipOf g reduce fs = g grate0 `runGrate` \get -> reduce (map get fs)
 
 newtype Zip2 a b = Zip2 {runZip2 :: a -> a -> b}
   deriving (Map_,Remap,Map) via (Promap ### Zip2) a
+  deriving (Monoidal (,)) via Apply ## Zip2 a -- TODO: roll into profunctor apply
   deriving Promap_ via Representational2 ### Zip2
   deriving anyclass Applicative
 instance Promap Zip2 where promap f g (Zip2 z) = Zip2 \ a a' -> g (z (f a) (f a'))

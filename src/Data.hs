@@ -136,15 +136,14 @@ instance Bot a => Monoid (Join # a)
 instance (Top a, Bot a) => Rg (Join # a) where (*) = coerce ((/\) @a)
 
 
-class Act a a => Op a where
+class Op a where
   (.) :: a -> a -> a
   scale1 :: P.Natural -> a -> a
   scale1 n = scale1# (n P.+ 1) 
-instance {-# overlappable #-} Op a => Act a a where act = (.)
 op :: Op a => a -> a -> a
 op a = (. a)
 
-class Op a => Act a s where act :: a -> s -> s
+class Op a => Act a s | s -> a where act :: a -> s -> s
 class Nil a where nil :: a
 -- | Decidable 'Nil'. @nil' nil = True@ and otherwise `False`
 class Nil a => Nil' a where nil' :: a -> Bool
@@ -197,16 +196,16 @@ class (FromNatural r, Inv r) => FromInteger r where
   fromInteger = (`scalei` one)
 
 -- | Scale by a non-zero @Natural@, this is not checked and will loop on 0.
-scale1# :: Act a a => P.Natural -> a -> a
+scale1# :: Op a => P.Natural -> a -> a
 scale1# y0 x0 = f x0 y0 where
   f x y 
-    | P.even y = f (x `act` x) (y `P.quot` 2)
+    | P.even y = f (x . x) (y `P.quot` 2)
     | y P.== 1 = x
-    | P.otherwise = g (x `act` x) ((y P.- 1) `P.quot` 2) x
+    | P.otherwise = g (x . x) ((y P.- 1) `P.quot` 2) x
   g x y z 
-    | P.even y = g (x `act` x) (y `P.quot` 2) z
-    | y P.== 1 = x `act` z
-    | P.otherwise = g (x `act` x) ((y P.- 1) `P.quot` 2) (x `act` z)
+    | P.even y = g (x . x) (y `P.quot` 2) z
+    | y P.== 1 = x . z
+    | P.otherwise = g (x . x) ((y P.- 1) `P.quot` 2) (x . z)
 
  {-| A near semiring (left)module-}
  {-(r*s)a = r(sa)-}

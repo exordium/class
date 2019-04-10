@@ -21,7 +21,7 @@ common x
 
 library
   import: x
-  exposed-modules: Data, Control, Fun, Functor
+  exposed-modules: Data, Control, Fun, Functor, Trans
                  , Types, Type.I, Type.O, Type.K, Type.E, Type.X, Type.Bazaar
                  , Reflect , Reflect.Monoid, Reflect.Mod
                  , Functor.Unsafe

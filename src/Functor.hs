@@ -84,6 +84,15 @@ fold f = traverseC @(Applicative & Comap) (f > K) > unK
 
 fold1 :: (TraverseC (Apply & Comap) t, Monoid m) => (a -> m) -> t a -> m
 fold1 f = traverseC @(Apply & Comap) (f > K) > unK
+ 
+type Fold c = TraverseC (IsK c)
+
+foldMap :: forall c t a m. (Fold c t, c m) => (a -> m) -> t a -> m
+foldMap am = unK < traverseC @(IsK c) (K < am)
+
+{-for_ :: forall c t a m. (Fold c t, c m) => t a -> (a -> m) -> m-}
+{-for_ s am = foldMap @c am s-}
+
 
 {-extract :: TraverseC (Map & Comap) f => f a -> a-}
 {-extract = traverseC @(Map & Comap) K > unK-}
@@ -152,7 +161,7 @@ f $| fb = f fb
 
 newtype instance (Apply ## f) a = Apply (f a)
   deriving newtype (Apply,Map,Remap,Map_)
-instance (Apply f, Op a) => Op ((Apply ## f) a) where (.) = coerce (liftA2 @f @a (.))
+instance (Apply f, Op a) => Op ((Apply ## f) a) where (.) = liftA2 (.)
 
 newtype instance (Pure ## f) a = Pure (f a) deriving newtype (Remap,Map_)
 instance (Pure f, Nil a) => Nil ((Pure ## f) a) where nil = Pure $ pure nil
@@ -360,8 +369,8 @@ phantom :: forall b a f. Phantom f => f a -> f b
 phantom = GHC.coerce @(f a) @(f b)
 
 -- | @Wrap@ed functors are (representationally) isomorphic to identity
-class (Distribute f, Monad f, Representational f, forall x. x =# f x) => Wrap f
-instance (Distribute f, Monad f, Representational f, forall x. x =# f x) => Wrap f
+class (Distribute f, forall c. c ==> Map => TraverseC c f, Representational f, forall x. x =# f x) => Wrap f
+instance (Distribute f, forall c. c ==> Map => TraverseC c f, Representational f, forall x. x =# f x) => Wrap f
 newtype instance (Wrap ## f) a = Wrap (f a)
 instance Wrap f => Monad (Wrap ## f) where bind = coerce
 instance Wrap f => Distribute (Wrap ## f) where distribute = pure < map_ unwrap
@@ -550,6 +559,7 @@ instance Append [] where (|.|) = (P.++) -- TODO: fix
 deriving via (Append ## []) a instance Op [a]
 deriving via Append ## [] instance Monoidal E []
 instance Apply [] where ap = (P.<*>) -- TODO: fix
+instance Applicative []
 deriving via Apply ## [] instance Monoidal (,) []
 {-deriving via (Rg1 ## []) a instance Op a => Rg [a]-}
 instance (c ==> Applicative) => TraverseC c [] where
@@ -609,7 +619,7 @@ deriving via Phantom ## K a instance Map_ (K a)
 instance c ==> Pure => TraverseC c (K a) where traverseC = phantom_traverseC @c
 instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
-instance Op a => Append (K a) where K a |.| K b = K $ a . b
+instance Op a => Append (K a) where K a |.| K b = K $ a . b -- TODO: fix
 deriving via Append ## K a instance Op a => Monoidal E (K a)
 instance Monoid a => Alternative (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)
@@ -629,3 +639,7 @@ instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Representational ## P.IO instance Map_ P.IO
 deriving via Map ## P.IO instance Remap P.IO
+
+deriving via (Apply ## P.IO) a instance Op a => Op (P.IO a)
+deriving via (Pure ## P.IO) a instance Nil a => Nil (P.IO a)
+deriving via (Applicative ## P.IO) a instance Monoid a => Monoid (P.IO a)

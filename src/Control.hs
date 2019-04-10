@@ -41,7 +41,7 @@ p <<< q = compose q p
 class (Category p, Promap p) => Arr p where
   arr :: (a -> b) -> p a b
   arr = (identity ^>)
-class (Arr p, Lensed p) => Arrow p where
+class (Arr p, TraversedC Map p) => Arrow p where
   (***) :: p x a -> p y b -> p (x,y) (a,b)
   p *** q = _1 p >>> _2 q
   (&&&) :: p x a -> p x b -> p x (a,b)
@@ -102,14 +102,6 @@ class Promap p => Closed p where
   zipping :: (forall f. Map f => (f a -> b) -> f s -> t) -> p a b -> p s t
   zipping sabsst = grate (`sabsst` \ s -> s)
 
-type Fold c = TraverseC (IsK c)
-
-foldMap :: forall c t a m. (Fold c t, c m) => (a -> m) -> t a -> m
-foldMap am = unK < traverseC @(IsK c) (K < am)
-
-for_ :: forall c t a m. (Fold c t, c m) => t a -> (a -> m) -> m
-for_ s am = foldMap @c am s
-
 {-(./) :: (Fold Add0 t, Add0 m) => t a -> (a -> m) -> m-}
 {-(./) = for_ @Add0-}
 {-(+/) :: (Fold Add0 t, Add0 m) => t a -> (a -> m) -> m-}
@@ -122,20 +114,8 @@ cocollect :: forall c f t a b. (TraverseC c t, c ==> Map, c f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequence @c tfa)
 
-{-class (TraversedC Wrap p, Closed p) => Mapped p  where -- TODO: check if needed for perf-}
-  {-mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t-}
-  {-mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure-}
-  {-mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)-}
-  {-mapped = mapping map-}
-type Mapped p = (TraversedC Wrap p, Closed p)
-mapping :: Mapped p => ((a -> b) -> s -> t) -> p a b -> p s t
-mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
-mapped :: (Mapped p, Map f) => p a b -> p (f a) (f b)
-mapped = mapping map
-
-
-{-newtype instance (Mapped ### p) a b = Mapped (p a b)-}
-
+type Mapped = TraversedC Wrap
+type Lensed = TraversedC Map
 
 class Promap p => TraversedC (c :: (* -> *) -> Constraint) p where
   traversedC :: TraverseC c t => p a b -> p (t a) (t b)
@@ -146,31 +126,38 @@ class Promap p => TraversedC (c :: (* -> *) -> Constraint) p where
                     {-=> (forall f. c f => (a -> f b) -> s -> f t)-}
                     {--> p a b -> p s t-}
   {-traversalC f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversedC @c pab)-}
+  mapping :: c ~ Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
+  mapping abst = traversalC @Wrap \ afb -> abst (afb > unwrap) > pure
+  mapped :: c ~ Wrap => Map f => p a b -> p (f a) (f b)
+  mapped = mapping map
 
-class TraversedC Map p => Lensed p where -- TODO: check if needed for performance
-  lens :: (s -> a) -> (s -> b -> t) -> p a b -> p s t
+  lens :: c ~ Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
   lens get set = traversalC @Map \ afb s -> set s `map` afb (get s)
-  _2 :: p a b -> p (x,a) (x,b)
+  _2 :: c ~ Map => p a b -> p (x,a) (x,b)
   _2 = traversedC @Map
-  _1 :: p a b -> p (a,x) (b,x)
+  _1 :: c ~ Map => p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
-instance {-# overlappable #-} TraversedC Map p => Lensed p
 
-newtype instance (Lensed ### p) a b = Lensed (p a b)
-  deriving newtype Lensed
-  deriving (Map,Remap,Map_) via (Promap ### p) a
-  deriving Promap_ via Promap ### Lensed ### p
--- | TODO: Buggy with DerivingVia
-instance (Map ==> c ,Lensed p) => TraversedC c (Lensed ### p) where
-  traversalC = lens_traversal @Map
-instance Lensed p => Promap (Lensed ### p) where promap f g = lens f (g!)
+mapping_traversal :: (Wrap ==> c, TraversedC Wrap p)
+                  => (forall f. c f => (a -> f b) -> s -> f t)
+                  -> p a b -> p s t
+mapping_traversal afbsft = mapping \ ab -> unI < afbsft (I < ab)
 
-lens_traversal :: (Map ==> c, Lensed p)
+
+traversal :: TraversedC Applicative p
+          => (forall f. Applicative f => (a -> f b) -> s -> f t) -> p a b -> p s t
+traversal = traversalC @Applicative
+
+traversed :: (TraversedC Applicative p, TraverseC Applicative t) => p a b -> p (t a) (t b)
+traversed = traversedC @Applicative
+
+lens_traversal :: (Map ==> c, TraversedC Map p)
                => (forall f. c f => (a -> f b) -> s -> f t)
                -> p a b -> p s t
 lens_traversal f = lens (f K > unK) (f \ _ -> id)
 
-lens0 :: (Prismed p, Lensed p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
+
+lens0 :: (Prismed p, TraversedC Map p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
 
 -- | 'Closed' over @(~) (E x))@
@@ -190,11 +177,14 @@ class Prismed p => From p where
   precoerce :: p a x -> p s x
   precoerce = from \ x -> x
 
+newtype instance (From ### p) a b = From (p a b) deriving newtype From
+  deriving (Map,Remap,Map_) via (Promap ### From ### p) a
+  deriving Promap_ via Promap ### From ### p
+instance From p => Prismed (From ### p) where prism _ = from
+instance From p => Promap  (From ### p) where promap _ = from
+
 class ((forall x y a b . (a =# x,y =# b) => p x y =# p a b),Promap_ p) => Representational2 p
 instance ((forall x y a b . (a =# x,y =# b) => p x y =# p a b), Promap_ p)=> Representational2 p
-
-class (Applicative f, Distribute f) => IsI f
-instance (Applicative f, Distribute f) => IsI f
 
 -- * Instances
 
@@ -203,15 +193,19 @@ instance Promap (->) where
   premap  = \f p s -> p (f s)
   postmap = \g p a -> g (p a)
 instance Promap_ (->) where promap_ _ _ = coerce
-{-instance Closed  (->)     where distributed = map; closed f = (f <)-}
-instance Wrap ==> c => TraversedC c (->) where
+instance Closed  (->)     where distributed = map; closed f = (f <)
+{-instance Wrap ==> c => TraversedC c (->) where-}
+instance TraversedC Wrap (->) where
  traversedC = map
- traversalC l f s = case l (\a -> I (f a)) s of {I t -> t} 
+ traversalC = mapping_traversal @Wrap
+ {-traversalC l f s = case l (\a -> I (f a)) s of {I t -> t} -}
+ lens sa sbt ab = \s -> sbt s (ab (sa s))
+ mapping = id
+
 {-instance Mapped (->) where-}
   {-mapping = id-}
   {-mapped = map-}
 instance Prismed (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}
-instance Lensed (->)
 instance Compose (->) where compose = (>)
 instance Identity (->) where identity = id
 instance Category (->)
@@ -268,7 +262,7 @@ class a ~ E (Left a) (Right a) => IsEither' a
 instance a ~ E (Left a) (Right a) => IsEither' a
 
 
-instance {-# overlappable #-} (Arr p, Lensed p) => Arrow p
+instance {-# overlappable #-} (Arr p, TraversedC Map p) => Arrow p
 instance {-# overlappable #-} (Arr p, Prismed p) => ArrowChoice p
 
 type Category# = PC.Category
@@ -298,12 +292,11 @@ newtype instance (Arrow ### p) a b = Arrow (p a b)
   deriving (Arr,Category,Compose,Identity,Promap,Promap_) via Arr ### p
   deriving (Map,Remap,Map_) via (Arr ### p) a
 
-instance Arrow p => Lensed (Arrow ### p) where
+instance (Map ==> c, Arrow p) => TraversedC c (Arrow ### p) where
+  traversalC = lens_traversal @Map
   lens sa sbt pab = arr (\s -> (sbt s,sa s))  >>> (identity *** pab) >>> arr (\(f,a) -> f a)
   _1 = (*** identity)
   _2 = (identity ***)
-instance (Map ==> c, Arrow p) => TraversedC c (Arrow ### p) where
-  traversalC = lens_traversal @Map
 
 type Arrow# p = P.Arrow
 

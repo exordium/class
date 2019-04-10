@@ -41,6 +41,8 @@ arg' :: Named.Name name -> Named.NamedF Maybe a name -> Maybe a
 arg' = Named.argF
 
 {-(^) :: -}
+f $: (a,b) = f a b
+f .$ a = (`f` a)
 f $ a = f a
 ($!) f !a = f a
 infixl 1 $, $!, $$, $., &

@@ -19,6 +19,8 @@ import Data
 set :: ((a -> b) -> s -> t) -> b -> s -> t
 set l b s = l (\_ -> b) s
 
+{-update l f s = l f s-}
+
 -- * GRATE
 
 newtype Grate a b s t = Grate {runGrate :: (((s -> a) -> b) -> t)}
@@ -69,6 +71,8 @@ data Iso a b s t = Iso (s -> a) (b -> t)
   deriving Promap_ via Promap ### Iso a b
 instance Promap (Iso a b) where promap f g (Iso sa bt) = Iso (f > sa) (g < bt)
 
+runIso (Iso sa bt) ab = sa > ab > bt
+
 repIso :: (forall p. Promap p => p a b -> p s t) -> Iso a b s t
 repIso p = p (Iso (\a -> a) (\b -> b))
 
@@ -84,11 +88,19 @@ newtype Traversing f a (b :: *) = Traversing {runTraversing :: a -> f b}
 _Traversing_ :: (Traversing f a b -> Traversing f s t) -> (a -> f b) -> s -> f t
 _Traversing_ = promap_ Traversing runTraversing
 
+forOf :: (Traversing f a b -> Traversing f s t) -> s -> (a -> f b) -> f t
+forOf l s = _Traversing_ l .$ s
+
+
+-- | ex:
+--
+-- > [1,2,3] & traversed @@~ print
 (@@~) :: (Traversing f a b -> Traversing f s t) -> (a -> f b) -> s -> f t
 (@@~) = _Traversing_
+infixl 2 @@~ --TODO: fix
 
 instance Map f => Promap (Traversing f)
-  where promap f g (Traversing s) = Traversing (promap f (map     g) s)
+  where promap f g (Traversing s) = Traversing (promap f (map g) s)
 instance Remap f => Remap (Traversing f a)
   where remap f g (Traversing s) = Traversing (remap f g < s)
 instance Map_ f => Map_ (Traversing f a)
@@ -98,13 +110,16 @@ instance Map_ f => Promap_ (Traversing f) where
   postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
-instance (Map ==> c, Map f) => TraversedC c (Traversing f) where
+instance (c f, c ==> Map) => TraversedC c (Traversing f) where
   traversalC afbsft (Traversing afb) = Traversing (afbsft afb)
 
 -- * PRISM
 
 _Just :: Prismed p => p a b -> p (Maybe a) (Maybe b)
-_Just = prism (\case {Nothing -> L Nothing; Just a -> R a}) Just
+_Just = prism .$ Just $ \case {Nothing -> L Nothing; Just a -> R a}
+
+_Nothing :: Prismed p => p () () -> p (Maybe a) (Maybe a)
+_Nothing = prism .$ (Nothing!) $ \case {Nothing -> R (); Just a -> L (Just a)}
 
 data Prism a b s t = Prism (s -> E t a) (b -> t)
   deriving (Map,Remap) via (Promap ### Prism a b) s
@@ -113,6 +128,7 @@ data Prism a b s t = Prism (s -> E t a) (b -> t)
 _Prism_ :: (Prism a b a b -> Prism a b s t) -> ((s -> E t a) -> (b -> t) -> r) -> r
 _Prism_ l k = case l (Prism R \ x -> x) of Prism h g -> k h g
 
+-- TODO: add gelisam's case matcher
 match :: (Prism a b a b -> Prism a b s t) -> (t -> r) -> (a -> r) -> s -> r
 match l kt ka = _Prism_ l (\pat _ -> \s -> case pat s of {L t -> kt t; R a -> ka a})
 
@@ -121,7 +137,7 @@ match' :: (Prism a b a b -> Prism a b s t) -> r -> (a -> r) -> s -> r
 match' l r ka = _Prism_ l (\pat _ -> \s -> case pat s of {L _ -> r; R a -> ka a})
 
 
-{--- | Try to view the target of a @Prism@-}
+-- | Try to view the target of a @Prism@
 preview :: (Prism a b a b -> Prism a b s t) -> s -> Maybe a
 preview l = match' l Nothing Just
 
@@ -145,3 +161,60 @@ _View_ = promap_ View runView
 instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
 instance c (K m) => TraversedC c (View m) where
   traversalC akmskm (View am) = View (unK < akmskm (K < am))
+
+newtype Review (a :: *) b = Review {runReview :: b}
+  deriving (Prismed,Promap) via From ### Review
+  deriving (Map,Remap) via (Promap ### Review) a
+  deriving Promap_ via Representational2 ### Review
+  deriving Map_ via Representational ## (Review a)
+instance From Review where from bt (Review b) = Review (bt b)
+
+
+newtype Do f (r :: *) a (b :: *) = Do {runDo :: a -> f r}
+  deriving (Map,Remap,Map_) via Phantom ## Do f r a
+  deriving Promap_ via Representational2 ### Do f r
+_Do_ :: Promap_ p => p (Do f r a b) (Do g r' s t) -> p (a -> f r) (s -> g r')
+_Do_ = promap_ Do runDo
+
+instance Promap (Do f r) where promap f _ (Do b) = Do (f > b)
+
+-- | Ex: @doWith _1 print :: (Zero r, Show a) => (a,x) -> IO r
+doWith :: (Do (FK f x) x a b -> Do (FK f x) x s t) -> (a -> f x) -> s -> f x
+doWith l afx = case l < Do $ FK < afx of Do sfkx -> sfkx > \case FK fx -> fx
+
+doFor :: Map f => (Do (FK f x) x a b -> Do (FK f x) x s t) -> s -> (a -> f x) -> f x
+doFor l s = doWith l .$ s
+
+instance c (K (f r)) => TraversedC c (Do f r) where
+  traversalC afbsft (Do afr) = Do (unK < (afbsft (K < afr)))
+
+newtype FK f a b = FK {runFK :: f a}
+  deriving (Map,Remap,Map_) via Phantom ## FK f a
+
+{-instance Apply f => Monoidal (,) (FK f a) where monoidal (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
+{-instance Apply f => Apply (FK f a) where ap (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
+{-instance (Pure f, Nil a) => Pure (FK f a) where pure !_ = FK (pure nil)-}
+{-instance (Applicative f, Nil a) => Applicative (FK f a)-}
+instance (Pure f, Nil a) => Nil (FK f a r) where nil = FK (pure nil)
+instance (Apply f, Op a) => Op (FK f a r) where FK f . FK g = FK (f |$(.)$| g)
+instance (Applicative f, Monoid a) => Monoid (FK f a r)
+
+
+{-newtype WrapF f a = WrapF {unwrapF :: f a}-}
+{-instance (Pure f, Zero a) => Zero (WrapF f a) where zero = WrapF (pure zero)-}
+{-instance (Apply f, Add a) => Add (WrapF f a) where add (WrapF a) (WrapF b) = WrapF (add `map` a `ap`     b)-}
+{-instance (Applicative f, Add0 a) => Add0 (WrapF f a)-}
+
+newtype Update b s t = Update {runUpdate :: b -> s -> t}
+  deriving (Map,Remap) via (Promap ### Update b) s
+  deriving Promap_ via Representational2 ### Update b
+  deriving Map_ via Representational ## Update b s
+instance Promap (Update b) where promap f g (Update bst) = Update \ b -> f > bst b > g
+instance Closed (Update b) where closed (Update bst) = Update \ b xs x -> bst b (xs x)
+instance Prismed (Update b) where
+  prism seta bt (Update bab) = Update \ b -> seta > (id ||| (bab b > bt))
+instance Wrap ==> c => TraversedC c (Update b) where
+  traversalC afbsft (Update bab) = Update \ b -> unI < afbsft (I < bab b)
+
+_Update_ :: Promap_ p => Update x a b `p` Update x s t -> (x -> a -> b) `p` (x -> s -> t)
+_Update_ = promap_ Update runUpdate

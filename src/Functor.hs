@@ -37,12 +37,12 @@ class (Remap f {- ,TraverseC Wrap f -}) => Map f where
   map :: (a -> b) -> f a -> f b
   mapConst :: b -> f a -> f b
   mapConst b = map \ _ -> b
-{-instance {-# overlappable #-} (c ==> Wrap, Map f) => TraverseC c f where-}
-  {-traverseC f = pure < map (unwrap < f)-}
-instance {-# overlappable #-} (Map f, Map_ f) => Remap f where remap _ = map
 newtype instance (Map ## f) a = Map (f a) deriving newtype Map
   deriving Map_ via Remap ## f
+instance Map f => Remap (Map ## f) where remap _ = map
 instance Map f => P.Functor (Map ## f) where fmap f = coerce (map @f f)
+map_traverse :: (c ==> Wrap, Map t, c f) => (a -> f b) -> t a -> f (t b)
+map_traverse f = pure < map (unwrap < f)
 ($@) :: Map f => (a -> b) -> f a -> f b
 ($@) = map
 (!@) :: Map f => b -> f a -> f b
@@ -162,7 +162,7 @@ instance (Pure f, Nil a) => Nil ((Pure ## f) a) where nil = Pure $ pure nil
 class (Map f, Pure f, Apply f) => Applicative f
 newtype instance (Applicative ## f) a = Applicative (f a)
   deriving newtype (Pure,Apply)
-  deriving (Map_, Map#) via Map ## Applicative ## f
+  deriving (Remap, Map_, Map#) via Map ## Applicative ## f
   deriving (Monoidal (,)) via Apply ## f
   deriving Op via (Apply ## f) a
   deriving Nil via (Pure ## f) a
@@ -185,7 +185,7 @@ class Monad t => Distribute t where
   collect f a = zipWithF (\x -> x) (map f a)
 newtype instance (Distribute ## t) a = Distribute (t a)
   deriving anyclass Applicative
-  deriving Map_ via Remap ## Distribute ## t
+  deriving (Remap, Map_) via Map ## Distribute ## t
 instance Distribute t => Map (Distribute ## t) where
   map ab (Distribute ta) = Distribute $ zipWithF (unI > ab) (I ta)
 instance Distribute t => Distribute (Distribute ## t) where
@@ -220,18 +220,13 @@ class (FZero f, Map f) => Empty f where
   empty = map absurd fzero
 newtype instance (Empty ## f) a = Empty (f a)
   deriving newtype Map
-  deriving Map_ via Map ## f
+  deriving (Map_,Remap) via Map ## f
 instance Empty f => FZero (Empty ## f) where fzero = Empty empty
 instance Empty f => Nil ((Empty ## f) a) where nil = Empty empty
 
 class (Append f, Empty f) => Alternative f
 
 -- | (fa ++ fb) `monoidal` fc = (fa `monoidal` fc) ++ (fb `monoidal` fc)
-class (Append f, Apply f) => Rg1 f
-newtype instance (Rg1 ## f) a = Rg1 (f a)
-  deriving newtype (Append, Apply,Map,Op, Map_)
-deriving newtype instance Rg1 f => Monoidal E (Rg1 ## f)
-deriving newtype instance Rg1 f => Monoidal (,) (Rg1 ## f)
 {-instance (Rg1 f, Op a) => Rg ((Rg1 ## f) a) where (*) = liftA2 (.)-}
 
 -- | Covariant E-monoidal functors can be appended
@@ -240,8 +235,9 @@ class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
   (|.|) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
 newtype instance (Append ## f) a = Append (f a)
   deriving newtype Map
-  deriving Map_ via Map ## f
-instance {-# overlappable #-} Append f => Monoidal E f where monoidal fa fb = map L fa |.| map R fb
+  deriving (Map_,Remap) via Map ## f
+instance Append f => Monoidal E (Append ## f) where
+  monoidal (Append fa) (Append fb) = Append $ map L fa |.| map R fb
 instance Append f => Op ((Append ## f) a) where Append f . Append g = Append (f |.| g)
 append a = (|.| a)
 
@@ -279,9 +275,10 @@ instance Choose f => Monoidal E (Choose ## f) where monoidal = choose id
 class Applicative m => Monad m where bind :: (a -> m b) -> m a -> m b
 newtype instance (Monad ## m) a = Monad (m a)
   deriving newtype (Monad, Applicative, Pure)
-  deriving (Monoidal (,), Map, Map_) via Applicative ## Monad ## m
+  deriving (Monoidal (,), Remap, Map, Map_) via Applicative ## Monad ## m
 instance Monad m => Apply (Monad ## m) where
   Monad mab `ap` Monad ma = Monad (mab >>= \ ab -> ma >>= (ab $) > pure)
+instance Monad m => Bound m (Monad ## m) where bound f (Monad m) = Monad $ bind f m
 (=<<) :: Monad m => (a -> m b) -> m a -> m b
 (=<<) = bind
 (>=>) :: Monad m => (a -> m b) -> (b -> m c) -> a -> m c
@@ -300,18 +297,12 @@ class (Monad m, Map f) => Bound m f where
   bound :: (a -> m b) -> f a -> f b
   joined :: f (m a) -> f a
   joined = bound id
-instance {-# overlappable #-} Monad m => Bound m m where bound = bind
-
--- @filter@ must match default implementation
----- TODO: check if this class is necessary for performance
-class Bound Maybe f => Filter f where 
-  filter :: (a -> Bool) -> f a -> f a
+  filter :: m ~ Maybe => (a -> Bool) -> f a -> f a
   filter f = bound \ a -> case f a of {False -> Nothing; True -> Just a}
-  partition :: (a -> Bool) -> f a -> (f a, f a)
+  partition :: m ~ Maybe => (a -> Bool) -> f a -> (f a, f a)
   partition f fa = (filter f fa, filter (P.not < f) fa)
-instance {-# overlappable #-} Bound Maybe f => Filter f
 
-class (Filter f, Monoidal These f) => Align f where
+class (Bound Maybe f, Monoidal These f) => Align f where
   {-zip :: f a -> f b -> f (a,b)-}
   {-zip fa fb = fmap (\case These a b -> Just (a,b); _ -> Nothing) $ align fa fb-}
   alignWith :: (a -> c) -> (b -> c) -> (a -> b -> c) -> f a -> f b -> f c
@@ -328,11 +319,11 @@ align = monoidal @These
 
 class (LMap f, forall x. Map (f x)) => Bimap f where
   bimap :: (x -> a) -> (y -> b) -> f x y -> f a b
-instance {-# overlappable #-} Bimap f => LMap f where lmap = (`bimap` id)
-{-instance {-# overlappable #-} Bimap f => Map (f a) where map = bimap id-}
 newtype instance (Bimap ### f) a b = Bimap (f a b)
-  deriving Map_ via Map ## (Bimap ### f) a
+  deriving newtype Bimap
+  deriving (Remap,Map_) via Map ## (Bimap ### f) a
 instance Bimap f => Map ((Bimap ### f) a) where map f (Bimap fab) = Bimap (bimap id f fab)
+instance Bimap f => LMap (Bimap ### f) where lmap = (`bimap` id)
 
 class LMap f where lmap :: (a -> b) -> f a x -> f b x
 
@@ -350,6 +341,7 @@ class    (forall x y. f x =# f y) => Phantom f
 instance (forall x y. f x =# f y) => Phantom f
 newtype instance (Phantom ## f) a = Phantom (f a)
 instance Phantom f => Map (Phantom ## f) where map _ = coerce
+instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
 instance Phantom f => Comap (Phantom ## f) where comap _ = coerce
 instance Phantom f => Map_ (Phantom ## f) where map_ _ = coerce
 instance (Phantom f, Append f, Bimap t) => Monoidal t (Phantom ## f) where
@@ -375,6 +367,7 @@ instance Wrap f => Monad (Wrap ## f) where bind = coerce
 instance Wrap f => Distribute (Wrap ## f) where distribute = pure < map_ unwrap
 deriving via Representational ## f instance Wrap f => Map_ (Wrap ## f)
 instance Wrap f => Map (Wrap ## f) where map = coerce
+instance Wrap f => Remap (Wrap ## f) where remap _ = coerce
 instance Wrap f => Applicative  (Wrap ## f)
 instance Wrap f => Pure (Wrap ## f) where pure = coerce
 instance Wrap f => Apply (Wrap ## f) where ap = unwrap > coerce
@@ -410,12 +403,12 @@ instance IsEither (E a)
 type Map# = P.Functor
 newtype instance (Map# ## f) a = Map# (f a)
   deriving newtype Map#
-  deriving Map_ via Map ## Map# ## f
+  deriving (Remap, Map_) via Map ## Map# ## f
 
 type Applicative# = P.Applicative
 newtype instance (Applicative# ## f) a = Applicative# (f a)
   deriving newtype (Map#, Applicative#)
-  deriving (Map,Map_) via Map# ## f
+  deriving (Remap,Map,Map_) via Map# ## f
   deriving (Monoidal (,)) via Apply ## Applicative# ## f
 instance Applicative# f => Pure (Applicative# ## f) where pure = P.pure
 instance Applicative# f => Apply (Applicative# ## f) where ap = (P.<*>)
@@ -424,17 +417,17 @@ instance Applicative# f => Applicative (Applicative# ## f)
 type Monad# = P.Monad
 newtype instance (Monad# ## m) a = Monad# (m a)
   deriving newtype (Monad#,Applicative#,Map#)
-  deriving (Applicative,Apply,Monoidal (,),Pure,Map,Map_) via Applicative# ## m
+  deriving (Applicative,Apply,Monoidal (,),Pure,Remap,Map,Map_) via Applicative# ## m
 
 type Fold# = P.Foldable
 newtype instance (Fold# ## f) a = Fold# (f a)
   deriving newtype (Fold#,Map#)
-  deriving (Map,Map_) via Map# ## f
+  deriving (Remap,Map,Map_) via Map# ## f
 
 type Traverse# = P.Traversable
 newtype instance (Traverse# ## f) a = Traverse# (f a)
   deriving newtype Map#
-  deriving (Map,Map_) via Map# ## f
+  deriving (Remap,Map,Map_) via Map# ## f
 instance Fold# f => P.Foldable (Traverse# ## f) where -- TODO: fix
   foldMap f (Traverse# tm) = P.foldMap f tm
 
@@ -463,7 +456,7 @@ instance MonadFix# m => MonadFix (MonadFix# ## m) where mfix = MonadFix# < P.mfi
 
 data V2 a = V2 {v2a :: a, v2b :: a}
   deriving stock (Map#, P.Traversable, P.Foldable)
-  deriving (Map) via Map# ## V2
+  deriving (Remap,Map) via Map# ## V2
   deriving Map_ via Representational ## V2
   deriving stock (P.Show)
 
@@ -474,6 +467,7 @@ deriving via Monad ## Maybe instance Applicative Maybe
 deriving via Monad ## Maybe instance Apply Maybe
 deriving via Monad ## Maybe instance Monoidal (,) Maybe
 deriving via Monad ## Maybe instance Map Maybe
+deriving via Monad ## Maybe instance Remap Maybe
 deriving via Representational ## Maybe instance Map_ Maybe
 instance c ==> Pure => TraverseC c Maybe where
   traverseC f = \case
@@ -490,6 +484,8 @@ instance c ==> Pure => TraverseC c Maybe where
 deriving via Representational ## E x instance Map_ (E x)
 instance Bimap E where bimap f g = \case {L a -> L $ f a; R b -> R $ g b}
 deriving via ((Bimap ### E) a) instance Map (E a)
+deriving via ((Bimap ### E) a) instance Remap (E a)
+deriving via Bimap ### E instance LMap E
 instance Pure (E x)   where pure = R
 instance c ==> Pure => TraverseC c (E x) where
   traverseC afb = \case {L x -> pure (L x); R a -> remap (\case R a -> a) R (afb a)}
@@ -497,6 +493,7 @@ instance c ==> Pure => TraverseC c (E x) where
 -- (->)
 type Reader = (->)
 instance Map (Reader x) where map f g = \a ->  f (g a)
+deriving via Map ## Reader x instance Remap (Reader x)
 deriving via Representational ## Reader x instance Map_ ((->) x)
 instance Distribute (Reader x) where distribute fxa x = map ($ x) fxa
 instance Pure (Reader x) where pure = (!)
@@ -524,6 +521,7 @@ instance Bimap t => Monoidal t Endo where monoidal (Endo f) (Endo g) = Endo $ bi
 
 newtype Reader' a b = Reader' {runReader' :: a -> Maybe b}
 instance Map (Reader' a) where map f (Reader' g) = Reader' $ g > map f
+deriving via Map ## Reader' a instance Remap (Reader' a)
 deriving via Representational ## Reader' x instance Map_ (Reader' x)
 instance Nil' x => Pure (Reader' x) where
   pure a = Reader' \ x -> nil' x ? Nothing $ Just a
@@ -545,13 +543,14 @@ deriving via Representational ## [] instance Map_ []
 instance Empty [] where empty = []
 deriving via (Empty ## []) a instance Nil [a]
 instance Monoid [a]
+deriving via Map ## [] instance Remap []
 instance Map   [] where map = P.map
 instance Pure  [] where pure a = [a]
 instance Append [] where (|.|) = (P.++) -- TODO: fix
 deriving via (Append ## []) a instance Op [a]
+deriving via Append ## [] instance Monoidal E []
 instance Apply [] where ap = (P.<*>) -- TODO: fix
 deriving via Apply ## [] instance Monoidal (,) []
-instance Rg1 []
 {-deriving via (Rg1 ## []) a instance Op a => Rg [a]-}
 instance (c ==> Applicative) => TraverseC c [] where
   traverseC f = go where
@@ -563,7 +562,7 @@ instance Bound Maybe [] where
     go [] = []
     go ((f -> Nothing):as)  =     go as
     go ((f -> Just b) :as)  = b : go as
-instance Filter [] where filter = P.filter
+  filter = P.filter
 {-instance Align [] where-}
   {-alignWith this that these = go where-}
       {-go [] bs = that $@ bs-}
@@ -575,15 +574,19 @@ instance Bimap These where
     This a -> This $ f a
     That b -> That $ g b
     These a b -> f a `These` g b
-deriving via (Bimap ### These) a instance Map (These a)
+deriving via (Bimap ### These) a instance Map   (These a)
+deriving via (Bimap ### These) a instance Remap (These a)
+deriving via  Bimap ### These    instance LMap   These
 deriving via (Representational ## These a) instance Map_ (These a)
 
 -- (,)
-deriving via Representational ## (,) x instance Map_ ((,) x)
-instance Map  ((,) x) where map f (x,a)     = (  x, f a)
-instance Bimap (,)    where bimap f g (a,b) = (f a, g b)
-instance LMap  (,)    where lmap f (a,x)    = (f a,   x)
-instance c ==> Remap => TraverseC c ((,) x) 
+type Writer = (,)
+deriving via Representational ## (,) x instance Map_ (Writer x)
+deriving via Map ## Writer x instance Remap (Writer x)
+instance Map  (Writer x) where map f (x,a)     = (  x, f a)
+instance Bimap Writer    where bimap f g (a,b) = (f a, g b)
+instance LMap  Writer    where lmap f (a,x)    = (f a,   x)
+instance c ==> Remap => TraverseC c (Writer x) 
   where traverseC f (x,a) = remap (\(_,b) -> b) (x,) (f a)
 
 -- I
@@ -592,6 +595,7 @@ deriving via Wrap ## I instance Apply I
 deriving via Wrap ## I instance Monoidal (,) I
 deriving via Wrap ## I instance Monad I
 deriving via Wrap ## I instance Map I
+deriving via Wrap ## I instance Remap I
 instance Applicative I
 deriving via Wrap ## I instance Map_ I
 instance c ==> Map_ => TraverseC c I where traverseC f (I a) = map_ I (f a)
@@ -599,12 +603,14 @@ instance Distribute I where distribute (fia :: f (I a)) = I (map_ unI fia)
 
 -- K
 deriving via Phantom ## K a instance Map (K a)
+deriving via Phantom ## K a instance Remap (K a)
 deriving via Phantom ## K a instance Comap (K a)
 deriving via Phantom ## K a instance Map_ (K a)
 instance c ==> Pure => TraverseC c (K a) where traverseC = phantom_traverseC @c
 instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
 instance Op a => Append (K a) where K a |.| K b = K $ a . b
+deriving via Append ## K a instance Op a => Monoidal E (K a)
 instance Monoid a => Alternative (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)
 deriving via Phantom ## K a instance Op a => Apply (K a)
@@ -622,3 +628,4 @@ deriving via Apply ## P.IO instance Monoidal (,) P.IO
 instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Representational ## P.IO instance Map_ P.IO
+deriving via Map ## P.IO instance Remap P.IO

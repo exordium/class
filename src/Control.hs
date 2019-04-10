@@ -22,7 +22,7 @@ import Fun
 import Data
 import qualified Data.Coerce as GHC
 import qualified Control.Arrow as P
-import qualified Control.Category as P
+import qualified Control.Category as PC
 import Functor hiding ((|||))
 
 class Compose p where compose :: p a b -> p b c -> p a c
@@ -33,19 +33,30 @@ class (Compose p, Identity p) => Category p
 (<<<) :: Compose p => p b c -> p a b -> p a c
 p <<< q = compose q p
 
+-- | @p@ has a homomorphic embedding from @Hask@
+-- 
+-- prop> promap f g p = arr f >>> p >>> arr g
+-- prop> arr (f > g) = arr f >>> arr g
+-- prop> arr id = identity
 class (Category p, Promap p) => Arr p where
   arr :: (a -> b) -> p a b
-  arr f = f ^> identity
+  arr = (identity ^>)
 class (Arr p, Lensed p) => Arrow p where
   (***) :: p x a -> p y b -> p (x,y) (a,b)
   p *** q = _1 p >>> _2 q
   (&&&) :: p x a -> p x b -> p x (a,b)
-  p &&& q = (\a -> (a,a)) ^> (p *** q)
+  p &&& q =  p *** q ^< \ a -> (a,a)
 class (Arr p, Prismed p) => ArrowChoice p  where
   (+++) :: p x a -> p y b -> p (E x y) (E a b)
   p +++ q = _L p >>> _R q
   (|||) :: p x a -> p y a -> p (E x y) a
-  p ||| q =  (p +++ q) >^ (\case L a -> a; R a -> a)
+  p ||| q =  p +++ q ^> (\case L a -> a; R a -> a)
+
+
+newtype EndoP p a = EndoP (p a a)
+instance Promap p => Remap (EndoP p) where remap f g (EndoP p) = EndoP $ promap f g p
+instance Promap_ p => Map_ (EndoP p) where map_ _ (EndoP p) = EndoP $ promap_ coerce coerce p
+{-instance ArrowChoice \c -}
 
 infixl 2 |||, +++
 infixl 3 &&&, ***
@@ -73,12 +84,12 @@ class (forall x. Map (p x), Promap_ p) => Promap p where
 (>^<) :: Promap p => (s -> a) -> (b -> t) -> p a b -> p s t
 (>^<) = promap
 infixr 1 >^<, ^>, ^<, >^, <^
-(^>) :: Promap p => (s -> a) -> p a x -> p s x
-(^>) = premap
-p <^ f = premap f p
-p >^ f = postmap f p
-(^<) :: Promap p => (b -> t) -> p x b -> p x t
-(^<) = postmap
+(>^) :: Promap p => (s -> a) -> p a x -> p s x
+(>^) = premap
+p ^< f = premap f p
+p ^> f = postmap f p
+(<^) :: Promap p => (b -> t) -> p x b -> p x t
+(<^) = postmap
 
 -- * Closed
 class Promap p => Closed p where
@@ -145,6 +156,20 @@ class TraversedC Map p => Lensed p where -- TODO: check if needed for performanc
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 instance {-# overlappable #-} TraversedC Map p => Lensed p
 
+newtype instance (Lensed ### p) a b = Lensed (p a b)
+  deriving newtype Lensed
+  deriving (Map,Remap,Map_) via (Promap ### p) a
+  deriving Promap_ via Promap ### Lensed ### p
+-- | TODO: Buggy with DerivingVia
+instance (Map ==> c ,Lensed p) => TraversedC c (Lensed ### p) where
+  traversalC = lens_traversal @Map
+instance Lensed p => Promap (Lensed ### p) where promap f g = lens f (g!)
+
+lens_traversal :: (Map ==> c, Lensed p)
+               => (forall f. c f => (a -> f b) -> s -> f t)
+               -> p a b -> p s t
+lens_traversal f = lens (f K > unK) (f \ _ -> id)
+
 lens0 :: (Prismed p, Lensed p) => (s -> E t a) -> (s -> b -> t) -> p a b -> p s t
 lens0 get set pab = promap (\s -> (get s, s)) (\(bt,s) -> case bt of {L t -> t; R b -> set s b}) (_1 (_R pab))
 
@@ -190,10 +215,10 @@ instance Lensed (->)
 instance Compose (->) where compose = (>)
 instance Identity (->) where identity = id
 instance Category (->)
-
-
+instance Arr (->) where arr = id
 
 deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
+deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 class (Map f, Comap f) => IsKK f
@@ -243,27 +268,63 @@ class a ~ E (Left a) (Right a) => IsEither' a
 instance a ~ E (Left a) (Right a) => IsEither' a
 
 
-instance {-# overlappable #-} (Category p, Promap p) => Arr p
 instance {-# overlappable #-} (Arr p, Lensed p) => Arrow p
 instance {-# overlappable #-} (Arr p, Prismed p) => ArrowChoice p
-instance {-# overlappable #-} Category p => P.Category p
+
+type Category# = PC.Category
+newtype instance (Category# ### p) a b = Category# (p a b)
+  deriving newtype Category#
+instance Category# p => Compose (Category# ### p) where compose q p = p PC.. q
+instance Category# p => Identity (Category# ### p) where identity = PC.id
+instance Category# p => Category (Category# ### p)
+
+newtype instance (Category ### p) a b = Category (p a b)
+  deriving newtype (Category,Compose,Identity,Promap,Promap_)
+  deriving (Map,Remap,Map_) via (Category ### p) a
+instance (Category p , Promap p) => Arr (Category ### p)
+
+newtype instance (Arr ### p) a b = Arr (p a b)
+  deriving newtype (Arr,Compose)
+  deriving Promap_ via Promap ### Arr ### p
+instance Arr p => Identity (Arr ### p) where identity = arr id
+instance Arr p => Category (Arr ### p)
+instance Arr p => Promap (Arr ### p) where promap f g p = arr f >>> p >>> arr g
+deriving via (Promap ### Arr ### p) a instance Arr p => Map ((Arr ### p) a)
+deriving via (Promap ### Arr ### p) a instance Arr p => Remap ((Arr ### p) a)
+deriving via (Promap ### Arr ### p) a instance Arr p => Map_ ((Arr ### p) a)
+
+newtype instance (Arrow ### p) a b = Arrow (p a b)
+  deriving newtype Arrow
+  deriving (Arr,Category,Compose,Identity,Promap,Promap_) via Arr ### p
+  deriving (Map,Remap,Map_) via (Arr ### p) a
+
+instance Arrow p => Lensed (Arrow ### p) where
+  lens sa sbt pab = arr (\s -> (sbt s,sa s))  >>> (identity *** pab) >>> arr (\(f,a) -> f a)
+  _1 = (*** identity)
+  _2 = (identity ***)
+instance (Map ==> c, Arrow p) => TraversedC c (Arrow ### p) where
+  traversalC = lens_traversal @Map
+
+type Arrow# p = P.Arrow
+
+instance {-# overlappable #-} Category p => PC.Category p
   where p . q = compose q p; id = identity
+
 instance {-# overlappable #-} Arrow p => P.Arrow p
   where arr = arr; (***) = (***); (&&&) = (&&&)
 instance {-# overlappable #-} (Arrow p, ArrowChoice p) => P.ArrowChoice p where
-  p +++ q = either2e ^> (p +++ q) >^ e2either
+  p +++ q = either2e >^ p +++ q ^> e2either
     where e2either = \case L a -> P.Left a; R b -> P.Right b
           either2e = \case P.Left a -> L a; P.Right b -> R b
-  p ||| q = either2e ^> (p ||| q)
+  p ||| q = either2e >^ p ||| q
     where either2e = \case P.Left a -> L a; P.Right b -> R b
-
-
 
 newtype instance (Promap ### p) a b = Promap (p a b)
   deriving newtype Promap
   deriving (Remap,Map_) via (Promap ### p) a
 instance Promap p => Map ((Promap ### p) a) where map f (Promap p) = Promap (postmap f p)
-instance {-# overlappable #-} Promap p => Promap_ p where
+instance Promap p => Promap_ (Promap ### p) where
+{-instance {-# overlappable #-} Promap p => Promap_ p where-}
   promap_ _ _ !p = promap coerce coerce p
   premap_ _ !p = premap coerce p
   postmap_ _ !p = postmap coerce p
@@ -281,22 +342,5 @@ instance Representational2 p => Promap_ (Representational2 ### p)
   {-deriving newtype (Promap, Promap_, Map_)-}
   {-deriving (Map) via Promap ### Ar a-}
 
-
-
-
 {-instance Bind I (Baz c t b) where bind = map_bind-}
 {-deriving via (Promap ### (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
-
-
-{-instance Impl Promap where-}
-  {-type Methods Promap = '[Required "promap"]-}
-  {-impl p (Arg promap) = [d|-}
-    {-instance Promap  $p where promap   = $promap-}
-    {-instance Premap  $p where premap f = $promap f \ x -> x-}
-    {-instance Postmap $p where postmap  = $promap \ x -> x-}
-    {-instance Map    ($p [tv|x|]) where map      = postmap-}
-    {-instance TraverseC IsI ($p [tv|x|]) where traverseC = map_traverseC-}
-    {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
-    {-instance Remap  ($p [tv|x|]) where remap _  = map-}
-    {-instance Map_  ($p [tv|x|]) where map_ = remap_map_-}
---    |] 

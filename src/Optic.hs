@@ -110,8 +110,7 @@ instance Map_ f => Promap_ (Traversing f) where
   postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
-instance Map f => TraversedC (Traversing f) where
-  type C (Traversing f) = Map
+instance Map f => TraversedC Map (Traversing f) where
   traversalC afbsft (Traversing afb) = Traversing (afbsft afb)
 
 -- * PRISM
@@ -160,8 +159,7 @@ _View_ :: Promap_ p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
 _View_ = promap_ View runView
 
 instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
-instance TraversedC (View m) where
-  type C (View m) = Map & Comap
+instance TraversedC (Map & Comap) (View m) where
   traversalC akmskm (View am) = View (unK < akmskm (K < am))
 
 newtype Review (a :: *) b = Review {runReview :: b}
@@ -187,8 +185,7 @@ doWith l afx = case l < Do $ FK < afx of Do sfkx -> sfkx > \case FK fx -> fx
 doFor :: Map f => (Do (FK f x) x a b -> Do (FK f x) x s t) -> s -> (a -> f x) -> f x
 doFor l s = doWith l .$ s
 
-instance TraversedC (Do f r) where
-  type C (Do f r) = Map & Comap
+instance TraversedC (Map & Comap) (Do f r) where
   traversalC afbsft (Do afr) = Do (unK < (afbsft (K < afr)))
 
 newtype FK f a b = FK {runFK :: f a}
@@ -216,8 +213,7 @@ instance Promap (Update b) where promap f g (Update bst) = Update \ b -> f > bst
 instance Closed (Update b) where closed (Update bst) = Update \ b xs x -> bst b (xs x)
 instance Prismed (Update b) where
   prism seta bt (Update bab) = Update \ b -> seta > (id ||| (bab b > bt))
-instance TraversedC (Update b) where
-  type C (Update b) = Wrap
+instance TraversedC Wrap (Update b) where
   traversalC afbsft (Update bab) = Update \ b -> unI < afbsft (I < bab b)
 
 _Update_ :: Promap_ p => Update x a b `p` Update x s t -> (x -> a -> b) `p` (x -> s -> t)

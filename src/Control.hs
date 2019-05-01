@@ -8,8 +8,6 @@
 {-# language UndecidableInstances #-}
 module Control where
 import GHC.Types
-import Impl hiding ((!))
-import TV
 import qualified Prelude as P
 import Type.Bazaar
 import Type.E
@@ -289,17 +287,3 @@ instance Representational2 p => Promap_ (Representational2 ### p)
 
 {-instance Bind I (Baz c t b) where bind = map_bind-}
 {-deriving via (Promap ### (Baz c t) b) instance Promap (Baz c t) => Bind I (Baz c t b)-}
-
-
-{-instance Impl Promap where-}
-  {-type Methods Promap = '[Required "promap"]-}
-  {-impl p (Arg promap) = [d|-}
-    {-instance Promap  $p where promap   = $promap-}
-    {-instance Premap  $p where premap f = $promap f \ x -> x-}
-    {-instance Postmap $p where postmap  = $promap \ x -> x-}
-    {-instance Map    ($p [tv|x|]) where map      = postmap-}
-    {-instance TraverseC IsI ($p [tv|x|]) where traverseC = map_traverseC-}
-    {-instance Strong ($p [tv|x|]) where strong a = map ((,) a)-}
-    {-instance Remap  ($p [tv|x|]) where remap _  = map-}
-    {-instance Map_  ($p [tv|x|]) where map_ = remap_map_-}
---    |] 

@@ -27,7 +27,6 @@ library
                  , Functor.Data
                  , Optic
   hs-source-dirs: src
-  build-depends: base, template-haskell, named, impl, ghc-prim, church
+  build-depends: base, template-haskell, named, ghc-prim, church
                , containers
                , bytestring
-               , finite-typelits

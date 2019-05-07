@@ -40,7 +40,7 @@ p <<< q = compose q p
 class (Category p, Promap p) => Arr p where
   arr :: (a -> b) -> p a b
   arr = (identity ^>)
-class (Arr p, Traversed Map p) => Arrow p where
+class (Arr p, Lensed p) => Arrow p where
   (***) :: p x a -> p y b -> p (x,y) (a,b)
   p *** q = _1 p >>> _2 q
   (&&&) :: p x a -> p x b -> p x (a,b)
@@ -51,25 +51,26 @@ class (Arr p, Prismed p) => ArrowChoice p  where
   (|||) :: p x a -> p y a -> p (E x y) a
   p ||| q =  p +++ q ^> (\case L a -> a; R a -> a)
 
-
-newtype EndoP p a = EndoP (p a a)
-instance Promap p => Remap (EndoP p) where remap f g (EndoP p) = EndoP $ promap f g p
-instance Promap_ p => Map_ (EndoP p) where map_ _ (EndoP p) = EndoP $ promap_ coerce coerce p
-{-instance ArrowChoice \c -}
-
 infixl 2 |||, +++
 infixl 3 &&&, ***
 
 
 -- * Promap
 class (forall x. Map_ (p x)) => Promap_ p where
-  {-# minimal promap_ | premap_,postmap_ #-}
-  promap_ :: (s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
-  promap_ f g = premap_ f > postmap_ g
-  premap_ :: (s =# a) => (s -> a) -> p a t -> p s t
-  premap_ = (`promap_` \ t -> t)
-  postmap_ :: (b =# t) => (b -> t) -> p s b -> p s t
-  postmap_ = promap_ \ s -> s
+  {-# minimal promapAs | premapAs ,postmapAs #-}
+  promapAs :: (s =# a, b =# t) => p a b -> p s t
+  promapAs = premapAs > postmapAs
+  premapAs :: forall s a t. (s =# a) => p a t -> p s t
+  premapAs = promapAs @p @s @a @t @t
+  postmapAs :: forall b t s. (t =# b) => p s b -> p s t
+  postmapAs = promapAs @p @s @s @b @t
+
+promap_ :: (Promap_ p, s =# a, b =# t) => (s -> a) -> (b -> t) -> p a b -> p s t
+promap_ _ _ = promapAs
+premap_ :: (Promap_ p, s =# a) => (s -> a) -> p a t -> p s t
+premap_ _ = premapAs
+postmap_ :: (Promap_ p, b =# t) => (b -> t) -> p s b -> p s t
+postmap_ _ = postmapAs
 
 class (forall x. Map (p x), Promap_ p) => Promap p where
   {-# minimal promap | premap,postmap #-}
@@ -113,28 +114,29 @@ cocollect :: forall f t a b. (Traverses Map t, Map f)
           => (t a -> b) -> t (f a) -> f b
 cocollect tab tfa = map tab (sequenceC @Map tfa)
 
-type Mapped p = Traversed Wrap p
-type Lensed p = Traversed Map p
-
-class Promap p => Traversed c p | p -> c where
+class Promap p => Traversed c p where
   traversed :: Traverses c t => p a b -> p (t a) (t b)
-  traversed = traversal (traverses @c)
+  traversed = traversal @c (traverses @c)
   traversal :: (forall f. c f => (a -> f b) -> s -> f t) -> p a b -> p s t
-  {-default traversal :: (forall ff bb aa. c ff => c (O ff (Bazaar c bb aa))-}
-                       {-,c I , c (Baz c t b))-}
-                    {-=> (forall f. c f => (a -> f b) -> s -> f t)-}
-                    {--> p a b -> p s t-}
-  {-traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed @c pab)-}
-  mapping :: c ~ Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
-  mapping abst = traversal \ afb -> abst (afb > unwrap) > pure
-  mapped :: c ~ Wrap => Map f => p a b -> p (f a) (f b)
-  mapped = mapping map
 
-  lens :: c ~ Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
-  lens get set = traversal \ afb s -> set s `map` afb (get s)
-  _2 :: c ~ Map => p a b -> p (x,a) (x,b)
-  _2 = traversed
-  _1 :: c ~ Map => p a b -> p (a,x) (b,x)
+class Traversed Wrap p => Mapped p where
+  mapping :: ((a -> b) -> s -> t) -> p a b -> p s t
+  mapping abst = traversal @Wrap \ afb -> abst (afb > unwrap) > pure
+  mapped :: Map f => p a b -> p (f a) (f b)
+  mapped = mapping map
+-- | Deriving via does not work for Traversed, because the @c@ is ambiguous.
+-- Use this function for default instances instead.
+mapping_traversal :: Mapped p
+                  => (forall f. Wrap f => (a -> f b) -> s -> f t)
+                  -> p a b -> p s t
+mapping_traversal afbsft = mapping \ ab -> unI < afbsft (I < ab)
+
+class Traversed Map p => Lensed p where
+  lens :: (s -> a) -> (s -> b -> t) -> p a b -> p s t
+  lens get set = traversal @Map \ afb s -> set s `map` afb (get s)
+  _2 :: p a b -> p (x,a) (x,b)
+  _2 = traversed @Map
+  _1 :: p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
   {-folding :: c ~ (Applicative & Comap)-}
@@ -145,10 +147,6 @@ class Promap p => Traversed c p | p -> c where
 {-app :: (Applicative f, Comap f) => f a -> f a -> f a-}
 {-app (comap absurd -> fa) (comap absurd -> fb) = map absurd (fa . fb)-}
 
-mapping_traversal :: Traversed Wrap p
-                  => (forall f. Wrap f => (a -> f b) -> s -> f t)
-                  -> p a b -> p s t
-mapping_traversal afbsft = mapping \ ab -> unI < afbsft (I < ab)
 
 lens_traversal :: Lensed p
                => (forall f. Map f => (a -> f b) -> s -> f t)
@@ -190,19 +188,21 @@ instance Promap (->) where
   promap  = \f g p s -> g (p (f s))
   premap  = \f p s -> p (f s)
   postmap = \g p a -> g (p a)
-instance Promap_ (->) where promap_ _ _ = coerce
+instance Promap_ (->) where promapAs = coerce
 instance Closed  (->)     where distributed = map; closed f = (f <)
 {-instance Wrap ==> c => Traversed c (->) where-}
-instance Traversed Wrap (->) where
- traversed = map
- traversal = mapping_traversal
- {-traversal l f s = case l (\a -> I (f a)) s of {I t -> t} -}
- lens sa sbt ab = \s -> sbt s (ab (sa s))
- mapping = id
 
-{-instance Mapped (->) where-}
-  {-mapping = id-}
-  {-mapped = map-}
+traversal_map :: forall c t a b. Wrap ==> c => Traverses c t => (a -> b) -> t a -> t b
+traversal_map ab = unI < traverses @c (I < ab)
+
+instance Wrap ==> c => Traversed c (->) where
+ traversed = traversal_map @c
+ traversal = mapping_traversal
+ --traversal l f s = case l (\a -> I (f a)) s of {I t -> t} 
+instance Lensed (->) where lens sa sbt ab = \s -> sbt s (ab (sa s))
+instance Mapped (->) where
+  mapping = id
+  mapped = map
 instance Prismed (->) where _R ab = \case {L x -> L x; R a -> R (ab a)}
 instance Compose (->) where compose = (>)
 instance Identity (->) where identity = id
@@ -213,34 +213,6 @@ deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
 deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
 instance Map (Baz c t b) where
   map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
-
-{-instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)-}
-instance (forall f x. c (O f (Bazaar c x b)), forall x. c (K x), c ==> Remap)
-  => Traverses c (Baz c t b) where
-     traverses f (Baz bz) = map_ Baz_ (unO (bz (\x -> O (remap buy (sell @c) (f x)))))
-
-instance (c ==> Map, c (Bazaar c a b)) => Map (Bazaar c a b) where
-  map f (Bazaar m) = Bazaar (\afb -> map f (m afb))
-  {-map f (Bazaar m) = Bazaar (map f < m)-}
-instance c ==> Map_ => Map_ (Bazaar c a b)
-  where map_ f (Bazaar m) = Bazaar (map_ f < m)
-instance c ==> Remap => Remap (Bazaar c a b) where
-  remap f g (Bazaar m) = Bazaar (\k -> remap f g (m k))
-instance (c (Bazaar c a b), c ==> Pure) => Pure (Bazaar c a b) where
-  pure t = Bazaar (pure t!)
-
-instance (c (Bazaar c a b), c ==> Apply) => Apply (Bazaar c a b) where
-  Bazaar afbfxy `ap` Bazaar afbfx = Bazaar \ afb -> afbfxy afb |$| afbfx afb
-instance (c (Bazaar c a b), c ==> Applicative) => Applicative (Bazaar c a b)
-instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where
-  bind abz (Bazaar xmyma) = Bazaar \ xmy ->
-    (`bind` xmyma xmy) \ a -> case abz a of Bazaar xmymb -> xmymb xmy
-
-{-instance (c (Bazaar c a b), c ==> Monad) => Monad (Bazaar c a b) where-}
-  {-traverses afb (Bazaar agyga) = -}
-
-    
-
 
 {-instance {-# Overlappable #-} Promap p => Promap_ p where-}
   {-promap_ _ _ !p = promap coerce coerce p-}
@@ -287,6 +259,7 @@ newtype instance (Arrow ### p) a b = Arrow (p a b)
 
 instance (Arrow p) => Traversed Map (Arrow ### p) where
   traversal = lens_traversal
+instance (Arrow p) => Lensed (Arrow ### p) where
   lens sa sbt pab = arr (\s -> (sbt s,sa s))  >>> (identity *** pab) >>> arr (\(f,a) -> f a)
   _1 = (*** identity)
   _2 = (identity ***)
@@ -311,18 +284,17 @@ newtype instance (Promap ### p) a b = Promap (p a b)
 instance Promap p => Map ((Promap ### p) a) where map f (Promap p) = Promap (postmap f p)
 instance Promap p => Promap_ (Promap ### p) where
 {-instance {-# overlappable #-} Promap p => Promap_ p where-}
-  promap_ _ _ !p = promap coerce coerce p
-  premap_ _ !p = premap coerce p
-  postmap_ _ !p = postmap coerce p
+  promapAs !p = promap coerce coerce p
+  premapAs !p = premap coerce p
+  postmapAs !p = postmap coerce p
 
 newtype instance (Promap_ ### p) a b = Promap_ (p a b) deriving newtype Promap_
 instance Promap_ p => Map_ ((Promap_ ### p) a) where
-  map_ f (Promap_ p) = Promap_ (postmap_ f p)
+  mapAs (Promap_ p) = Promap_ (postmap_ coerce p)
 
 newtype instance (Representational2 ### p) a b = Representational2 (p a b)
   deriving Map_ via (Promap_ ### p) a
-instance Representational2 p => Promap_ (Representational2 ### p)
-  where promap_  _ _ = coerce
+instance Representational2 p => Promap_ (Representational2 ### p) where promapAs = coerce
 
 {-newtype Ar a b = Ar (a -> b)-}
   {-deriving newtype (Promap, Promap_, Map_)-}

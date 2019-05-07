@@ -28,7 +28,8 @@ class Map_ f => Remap f where
   {-map__ :: (a =# b) => (Representational f => f a -> f b) -> (a -> b) -> f a -> f b-}
   {-map__ _ _ !x = remap coerce coerce x-}
 newtype instance (Remap ## f) a = Remap (f a)
-instance Remap f => Map_ (Remap ## f) where map_ _ (Remap (!x)) = Remap $ remap coerce coerce x
+instance Remap f => Map_ (Remap ## f) where
+  mapAs (Remap (!x)) = Remap $ remap coerce coerce x
 -- | Every haskell functor is Strong
 strong :: Remap f => a -> f b -> f (a,b)
 strong a = remap (\(_,b) -> b) (a,)
@@ -50,9 +51,9 @@ map_traverse f = pure < map (unwrap < f)
 
 -- | Traverse over a container with a functor 
  {-forall cc. (cc ==> c) => Traverses cc t, c ==> Map_, -}
-class Map t => Traverses c t where
+class Traverses c t where
   traverses :: c f => (a -> f b) -> t a -> f (t b)
-  traverses afb ta = sequenceC @c (map afb ta)
+  --traverses afb ta = sequenceC @c (map afb ta)
   sequenceC :: c f => t (f a) -> f (t a)
   sequenceC = traverses @c \ x -> x
 
@@ -109,13 +110,25 @@ extract0 f = traverses @(Pure & Comap) (f > K) > unK
 (@?) :: (Traverses (Pure & Comap) t, Nil a) => t a -> a -> a
 (@?) t a = usingInst (Reified_Nil a) do extract0 Instance t
 
-data instance Reified Nil a = Reified_Nil a
+newtype instance Reified Nil a = Reified_Nil a
 instance Reifies s (Reified Nil a) => Nil (Instance Nil a s) where
   nil = let Reified_Nil a = reflect' @s
          in Instance @Nil a
 
 -- | extract < remap f g = f < g < extract
 class Traverses Constant w => Extract w where extract :: w a -> a
+
+{-
+ -newtype instance (Extract ## w) a = Extract (w a)
+ -  deriving newtype Extract
+ -  deriving (Remap, Map_) via Map ## Extract ## w
+ -instance Extract w => Traverses Constant (Extract ## w) where
+ -  traverses afb = constant < afb < extract
+ -instance Extract w => Map (Extract ## w) where
+ -  map f wa = _ $ traverses (K < f) wa
+ -}
+
+
 class Remap w => Duplicate w where
   {-extend :: (w a -> b) -> w a -> w b-}
   {-extend wab wa = remap (\_ -> wa) wab $ duplicate wa-}
@@ -124,14 +137,14 @@ class Remap w => Duplicate w where
 -- | extend extract = id
 class (Extract w, Duplicate w) => Comonad w
 
--- * Scale0al Functors
+-- * Monoidal Functors
 
--- | A @Scale0al@ functor over some associative monoidal product @t@
+-- | A @Monoidal@ functor over some associative monoidal product @t@
 -- prop> remap (bimap f p) (bimap g q) (monoidal fa fb) = remap f g fa `monoidal` remap p q fb
-class (Bimap t, Remap f) => Scale0al t f where monoidal :: f a -> f b -> f (a `t` b)
-(|*|) :: Scale0al (,) f => f a -> f b -> f (a,b)
+class (Bimap t, Remap f) => Monoidal t f where monoidal :: f a -> f b -> f (a `t` b)
+(|*|) :: Monoidal (,) f => f a -> f b -> f (a,b)
 (|*|) = monoidal
-(|+|) :: Scale0al E f => f a -> f b -> f (E a b)
+(|+|) :: Monoidal E f => f a -> f b -> f (E a b)
 (|+|) = monoidal
 -- | A @Pure f@ is a pointed functor with a particular inhabited shape singled out
 -- Free Theorem:
@@ -143,12 +156,12 @@ class ({- Lifting Scale0 One f, -} Remap f) => Pure f where
   fone :: f ()
   fone = pure ()
 
-class (Scale0al (,) f, Map f) => Apply f where
+class (Monoidal (,) f, Map f) => Apply f where
   ap :: f (a -> b) -> f a -> f b
   ap = liftA2 id
   liftA2 :: (a -> b -> c) -> f a -> f b -> f c
   liftA2 f = ap < map f
-instance Apply f => Scale0al (,) (Apply ## f) where monoidal fa = ((,) $@ fa |$|)
+instance Apply f => Monoidal (,) (Apply ## f) where monoidal fa = ((,) $@ fa |$|)
 (|$|) :: Apply f => f (a -> b) -> f a -> f b
 (|$|) = ap
 -- | Infix synonym for @liftA2@ to be used with @($|)@. Ex:
@@ -178,7 +191,7 @@ class (Map f, Pure f, Apply f) => Applicative f
 newtype instance (Applicative ## f) a = Applicative (f a)
   deriving newtype (Pure,Apply)
   deriving (Remap, Map_, Map#) via Map ## Applicative ## f
-  deriving (Scale0al (,)) via Apply ## f
+  deriving (Monoidal (,)) via Apply ## f
   deriving Op via (Apply ## f) a
   deriving Nil via (Pure ## f) a
 instance Applicative f => Map (Applicative ## f) where map f = (pure f |$|)
@@ -214,7 +227,7 @@ instance Distribute t => Apply (Distribute ## t) where
   Distribute tab `ap` Distribute ta = Distribute
     $ zipWithF (\(V2 (L f) (R a)) -> f a) (V2 (L $@ tab) (R $@ ta))
 deriving via Apply ## Distribute ## t
-  instance Distribute t => Scale0al (,) (Distribute ## t)
+  instance Distribute t => Monoidal (,) (Distribute ## t)
 instance Distribute t => Monad (Distribute ## t) where
   bind atb ta = ta |&| distribute atb
 instance Distribute t => MonadFix (Distribute ## t) where
@@ -245,13 +258,13 @@ class (Append f, Empty f) => Alternative f
 {-instance (Rg1 f, Op a) => Rg ((Rg1 ## f) a) where (*) = liftA2 (.)-}
 
 -- | Covariant E-monoidal functors can be appended
-class (forall x. Op (f x), Scale0al E f, Map f) => Append f where
+class (forall x. Op (f x), Monoidal E f, Map f) => Append f where
   (|.|) :: f a -> f a -> f a
   (|.|) fa fa' = map (\case L a -> a; R b -> b) (fa `monoidal` fa')
 newtype instance (Append ## f) a = Append (f a)
   deriving newtype Map
   deriving (Map_,Remap) via Map ## f
-instance Append f => Scale0al E (Append ## f) where
+instance Append f => Monoidal E (Append ## f) where
   monoidal (Append fa) (Append fb) = Append $ map L fa |.| map R fb
 instance Append f => Op ((Append ## f) a) where Append f `op` Append g = Append (g |.| f)
 append a = (|.| a)
@@ -264,38 +277,38 @@ newtype instance (Comap ## f) a = Comap (f a)
   deriving Map_ via Remap ## f
 instance Comap f => Remap (Comap ## f) where remap f _ = comap f
 
-class (Comap f, Scale0al (,) f) => FDivide f where -- TODO: check this is needed for performance
+class (Comap f, Monoidal (,) f) => FDivide f where -- TODO: check this is needed for performance
   fdivide :: (x -> a) -> (x -> b) -> f a -> f b -> f x
   fdivide f g fa fb = comap (\x -> (f x, g x)) (fa `monoidal` fb)
-instance {-# overlappable #-} (Scale0al (,) f, Comap f) => FDivide f
+instance {-# overlappable #-} (Monoidal (,) f, Comap f) => FDivide f
 
 newtype instance (FDivide ## f) a = FDivide (f a)
   deriving newtype (FDivide,Comap)
   deriving (Remap,Map_) via Comap ## f
 
-instance FDivide f => Scale0al (,) (FDivide ## f) where
+instance FDivide f => Monoidal (,) (FDivide ## f) where
   monoidal = fdivide (\(a,_) -> a) (\(_,b) -> b)
 
-class (Comap f, Scale0al E f) => Choose f where
+class (Comap f, Monoidal E f) => Choose f where
   choose :: (x -> E a b) -> f a -> f b -> f x
   choose f fa fb = comap f (monoidal fa fb)
-instance {-#overlappable #-} (Comap f, Scale0al E f) => Choose f
+instance {-#overlappable #-} (Comap f, Monoidal E f) => Choose f
 
 newtype instance (Choose ## f) a = Choose (f a)
   deriving newtype (Choose,Comap)
   deriving (Remap,Map_) via Comap ## f
-instance Choose f => Scale0al E (Choose ## f) where monoidal = choose id
+instance Choose f => Monoidal E (Choose ## f) where monoidal = choose id
 
-class (Map f, Comap f) => Constant f where
+class (Map f, Comap f, Representational f) => Constant f where
   constant :: f a -> f b
   constant = map absurd < comap absurd
-instance {-# overlappable #-} (Map f, Comap f) => Constant f
+instance {-# overlappable #-} (Map f, Comap f, Representational f) => Constant f
 
 -- * Monads
 class Applicative m => Monad m where bind :: (a -> m b) -> m a -> m b
 newtype instance (Monad ## m) a = Monad (m a)
   deriving newtype (Monad, Applicative, Pure)
-  deriving (Scale0al (,), Remap, Map, Map_) via Applicative ## Monad ## m
+  deriving (Monoidal (,), Remap, Map, Map_) via Applicative ## Monad ## m
 instance Monad m => Apply (Monad ## m) where
   Monad mab `ap` Monad ma = Monad (mab >>= \ ab -> ma >>= (ab $) > pure)
 instance Monad m => Bound m (Monad ## m) where bound f (Monad m) = Monad $ bind f m
@@ -322,7 +335,7 @@ class (Monad m, Map f) => Bound m f where
   partition :: m ~ Maybe => (a -> Bool) -> f a -> (f a, f a)
   partition f fa = (filter f fa, filter (P.not < f) fa)
 
-class (Bound Maybe f, Scale0al These f) => Align f where
+class (Bound Maybe f, Monoidal These f) => Align f where
   {-zip :: f a -> f b -> f (a,b)-}
   {-zip fa fb = fmap (\case These a b -> Just (a,b); _ -> Nothing) $ align fa fb-}
   alignWith :: (a -> c) -> (b -> c) -> (a -> b -> c) -> f a -> f b -> f c
@@ -332,9 +345,9 @@ class (Bound Maybe f, Scale0al These f) => Align f where
       That y -> g y
       These x y -> h x y
 newtype instance (Align ## f) a = Align (f a)
-{-instance Align f => Scale0al These (Align ## f) where-}
+{-instance Align f => Monoidal These (Align ## f) where-}
   {-monoidal = coerce (alignWith @f This That These)-}
-align :: Scale0al These f => f a -> f b -> f (These a b)
+align :: Monoidal These f => f a -> f b -> f (These a b)
 align = monoidal @These
 
 class (LMap f, forall x. Map (f x)) => Bimap f where
@@ -348,10 +361,10 @@ instance Bimap f => LMap (Bimap ### f) where lmap = (`bimap` id)
 class LMap f where lmap :: (a -> b) -> f a x -> f b x
 
 -- * Coercions
-class    ((forall a b. a =# b => f a =# f b),Map_ f) => Representational f
-instance ((forall a b. a =# b => f a =# f b),Map_ f) => Representational f
+class    ((forall a b. a =# b => f a =# f b)) => Representational f
+instance ((forall a b. a =# b => f a =# f b)) => Representational f
 newtype instance (Representational ## f) a = Representational (f a)
-instance Representational f => Map_ (Representational ## f) where map_ _ = coerce
+instance Representational f => Map_ (Representational ## f) where mapAs = coerce
 representational :: forall b a f. (a =# b, Representational f) => f a -> f b
 representational = GHC.coerce
 {-# INLINE representational #-}
@@ -363,8 +376,9 @@ newtype instance (Phantom ## f) a = Phantom (f a)
 instance Phantom f => Map (Phantom ## f) where map _ = coerce
 instance Phantom f => Remap (Phantom ## f) where remap _ _ = coerce
 instance Phantom f => Comap (Phantom ## f) where comap _ = coerce
-instance Phantom f => Map_ (Phantom ## f) where map_ _ = coerce
-instance (Phantom f, Append f, Bimap t) => Scale0al t (Phantom ## f) where
+instance Phantom f => Map_ (Phantom ## f) where mapAs = coerce
+instance Phantom f => Constant (Phantom ## f) where constant = coerce
+instance (Phantom f, Append f, Bimap t) => Monoidal t (Phantom ## f) where
   Phantom fa `monoidal` Phantom fb = Phantom < phantom $ fa |.| phantom fb
 instance (Phantom f, Append f) => Apply (Phantom ## f) where
   Phantom fab `ap` Phantom fa = Phantom < phantom $ fab |.| phantom fa
@@ -380,18 +394,29 @@ phantom :: forall b a f. Phantom f => f a -> f b
 phantom = GHC.coerce @(f a) @(f b)
 
 -- | @Wrap@ed functors are (representationally) isomorphic to identity
-class (Distribute f, forall c. c ==> Map => Traverses c f, Representational f, forall x. x =# f x) => Wrap f
-instance (Distribute f, forall c. c ==> Map => Traverses c f, Representational f, forall x. x =# f x) => Wrap f
+class (Distribute f
+      --,forall c. c ==> Map => Traverses c f
+      ,Representational f
+      ,forall x. x =# f x
+      ,Map f
+      ,Extract f) => Wrap f
+instance (Distribute f
+        --,forall c. c ==> Map => Traverses c f
+        ,Representational f
+        ,forall x. x =# f x
+        ,Map f
+        ,Extract f) => Wrap f
 newtype instance (Wrap ## f) a = Wrap (f a)
 instance Wrap f => Monad (Wrap ## f) where bind = coerce
 instance Wrap f => Distribute (Wrap ## f) where distribute = pure < map_ unwrap
+instance Wrap f => Extract (Wrap ## f) where extract = unwrap
 deriving via Representational ## f instance Wrap f => Map_ (Wrap ## f)
 instance Wrap f => Map (Wrap ## f) where map = coerce
 instance Wrap f => Remap (Wrap ## f) where remap _ = coerce
 instance Wrap f => Applicative  (Wrap ## f)
 instance Wrap f => Pure (Wrap ## f) where pure = coerce
 instance Wrap f => Apply (Wrap ## f) where ap = unwrap > coerce
-instance Wrap f => Scale0al (,) (Wrap ## f) where
+instance Wrap f => Monoidal (,) (Wrap ## f) where
   monoidal (unwrap -> a) (unwrap -> b) = pure (a,b)
 wrap_traverses :: (c ==> Map_, c f, Wrap t) => (a -> f b) -> t a -> f (t b)
 wrap_traverses f (unwrap -> a) = map_ pure $ f a
@@ -402,11 +427,13 @@ unwrap = coerce
 
 -- | Strictly map a coercion over a functor, 
 -- using 'coerce' if it's 'Representational' or `remap` otherwise.
-class Map_ f where map_ :: a =# b => (a -> b) -> f a -> f b
+class Map_ f where mapAs :: b =# a => f a -> f b
+map_ :: forall f a b. (Map_ f, a =# b) => (a -> b) -> f a -> f b
+map_ _ = mapAs @f @b @a
+comap_ :: forall f a b. (Map_ f, a =# b) => (b -> a) -> f a -> f b
+comap_ _ = mapAs @f @b @a
 (#@) :: (Map_ f, a =# b) => (a -> b) -> f a -> f b
 (#@) = map_
-mapAs :: forall b a f. (Map_ f, a =# b) => f a -> f b
-mapAs = map_ (coerce @b)
 
 type family LeftF t where LeftF (E a) = a
 class (Map f, f ~ E (LeftF f)) => IsEither f
@@ -439,7 +466,7 @@ type Applicative# = P.Applicative
 newtype instance (Applicative# ## f) a = Applicative# (f a)
   deriving newtype (Map#, Applicative#)
   deriving (Remap,Map,Map_) via Map# ## f
-  deriving (Scale0al (,)) via Apply ## Applicative# ## f
+  deriving (Monoidal (,)) via Apply ## Applicative# ## f
 instance Applicative# f => Pure (Applicative# ## f) where pure = P.pure
 instance Applicative# f => Apply (Applicative# ## f) where ap = (P.<*>)
 instance Applicative# f => Applicative (Applicative# ## f)
@@ -447,7 +474,7 @@ instance Applicative# f => Applicative (Applicative# ## f)
 type Monad# = P.Monad
 newtype instance (Monad# ## m) a = Monad# (m a)
   deriving newtype (Monad#,Applicative#,Map#)
-  deriving (Applicative,Apply,Scale0al (,),Pure,Remap,Map,Map_) via Applicative# ## m
+  deriving (Applicative,Apply,Monoidal (,),Pure,Remap,Map,Map_) via Applicative# ## m
 
 type Fold# = P.Foldable
 newtype instance (Fold# ## f) a = Fold# (f a)
@@ -468,7 +495,7 @@ instance Traverse# f => P.Traversable (Traverse# ## f) where -- TODO: fix
 type MonadFix# = P.MonadFix
 newtype instance (MonadFix# ## m) a = MonadFix# (m a)
   deriving newtype (Monad#, Applicative#, Map#, MonadFix#)
-  deriving (Monad,Applicative,Apply,Scale0al (,),Pure,Map,Remap,Map_) via Monad# ## m
+  deriving (Monad,Applicative,Apply,Monoidal (,),Pure,Map,Remap,Map_) via Monad# ## m
 
 
 newtype instance (Stock ## f) a = Stock1 (f a)
@@ -477,7 +504,7 @@ instance P.Traversable f => P.Traversable (Stock ## f) where
   traverse afb (Stock1 ta) = P.fmap Stock1 (P.traverse afb ta)
 
 instance P.Monad f => Monad (Monad# ## f) where bind f = (P.>>= f)
-instance Traverse# f => Traverses Applicative (Traverse# ## f) where
+instance (c ==> Applicative, Traverse# f) => Traverses c (Traverse# ## f) where
   traverses afb (Traverse# ta) = map_ Traverse# < (\(Applicative x) -> x)
                             $ P.traverse (Applicative < afb) ta
 instance Map# f => Map (Map# ## f) where map = P.fmap
@@ -495,7 +522,7 @@ instance Pure Maybe where pure = Just
 instance Monad Maybe where bind f = \case {Nothing -> Nothing; Just a -> f a}
 deriving via Monad ## Maybe instance Applicative Maybe
 deriving via Monad ## Maybe instance Apply Maybe
-deriving via Monad ## Maybe instance Scale0al (,) Maybe
+deriving via Monad ## Maybe instance Monoidal (,) Maybe
 deriving via Monad ## Maybe instance Map Maybe
 deriving via Monad ## Maybe instance Remap Maybe
 deriving via Representational ## Maybe instance Map_ Maybe
@@ -528,7 +555,7 @@ deriving via Representational ## Reader x instance Map_ ((->) x)
 instance Distribute (Reader x) where distribute fxa x = map ($ x) fxa
 instance Pure (Reader x) where pure = (!)
 instance Apply (Reader x) where ap iab ia = \i -> iab i $ ia i
-deriving via Apply ## (Reader x) instance Scale0al (,) ((->) x)
+deriving via Apply ## (Reader x) instance Monoidal (,) ((->) x)
 instance Applicative (Reader x)
 instance Monad (Reader x) where bind aib ia = \i -> aib (ia i) i
 {-deriving via Apply ## ((->) x) instance Op a => Op (x -> a)-}
@@ -549,7 +576,7 @@ deriving via (Applicative ## ((->) a)) s instance Scale0 s => Scale0 (Re s a)
 
 deriving via Representational ## Endo instance Map_ Endo
 instance Remap Endo where remap ba ab (Endo aa) = Endo $ ba > aa > ab
-instance Bimap t => Scale0al t Endo where monoidal (Endo f) (Endo g) = Endo $ bimap f g
+instance Bimap t => Monoidal t Endo where monoidal (Endo f) (Endo g) = Endo $ bimap f g
 
 -- []
 deriving via Empty            ## [] instance FZero []
@@ -562,10 +589,10 @@ instance Map   [] where map = P.map
 instance Pure  [] where pure a = [a]
 instance Append [] where (|.|) = (P.++) -- TODO: fix
 deriving via (Append ## []) a instance Op [a]
-deriving via Append ## [] instance Scale0al E []
+deriving via Append ## [] instance Monoidal E []
 instance Apply [] where ap = (P.<*>) -- TODO: fix
 instance Applicative []
-deriving via Apply ## [] instance Scale0al (,) []
+deriving via Apply ## [] instance Monoidal (,) []
 {-deriving via (Rg1 ## []) a instance Op a => Rg [a]-}
 instance (c ==> Applicative) => Traverses c [] where
   traverses f = go where
@@ -607,10 +634,11 @@ instance c ==> Remap => Traverses c (Writer x)
 -- I
 deriving via Wrap ## I instance Pure I
 deriving via Wrap ## I instance Apply I
-deriving via Wrap ## I instance Scale0al (,) I
+deriving via Wrap ## I instance Monoidal (,) I
 deriving via Wrap ## I instance Monad I
 deriving via Wrap ## I instance Map I
 deriving via Wrap ## I instance Remap I
+deriving via Wrap ## I instance Extract I
 instance Applicative I
 deriving via Wrap ## I instance Map_ I
 instance c ==> Map_ => Traverses c I where traverses f (I a) = map_ I (f a)
@@ -625,11 +653,11 @@ instance c ==> Pure => Traverses c (K a) where traverses = phantom_traverses @c
 instance Nil a => Empty (K a) where empty = K nil
 deriving via Empty ## K a instance Nil a => FZero (K a)
 instance Op a => Append (K a) where K a |.| K b = K $ op b a -- TODO: fix
-deriving via Append ## K a instance Op a => Scale0al E (K a)
+deriving via Append ## K a instance Op a => Monoidal E (K a)
 instance Scale0 a => Alternative (K a)
 deriving via (Append ## K a) x instance Op a => Op (K a x)
 deriving via Phantom ## K a instance Op a => Apply (K a)
-deriving via Phantom ## K a instance Op a => Scale0al (,) (K a)
+deriving via Phantom ## K a instance Op a => Monoidal (,) (K a)
 deriving via Phantom ## K a instance Nil a => Pure (K a)
 instance Scale0 a => Applicative (K a)
 instance Scale0 a => Distribute (K a) where distribute _ = K nil
@@ -639,7 +667,7 @@ deriving via Phantom ## K a instance Scale0 a => Monad (K a)
 instance Monad P.IO where bind f io = io P.>>= f
 instance Applicative P.IO
 instance Apply P.IO where ap = (P.<*>)
-deriving via Apply ## P.IO instance Scale0al (,) P.IO
+deriving via Apply ## P.IO instance Monoidal (,) P.IO
 instance Pure P.IO where pure = P.pure
 instance Map P.IO where map = P.fmap
 deriving via Representational ## P.IO instance Map_ P.IO

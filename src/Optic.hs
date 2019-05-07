@@ -52,7 +52,7 @@ zipOf g reduce fs = g grate0 `runGrate` \get -> reduce (map get fs)
 
 newtype Zip2 a b = Zip2 {runZip2 :: a -> a -> b}
   deriving (Map_,Remap,Map) via (Promap ### Zip2) a
-  deriving (Scale0al (,)) via Apply ## Zip2 a -- TODO: roll into profunctor apply
+  deriving (Monoidal (,)) via Apply ## Zip2 a -- TODO: roll into profunctor apply
   deriving Promap_ via Representational2 ### Zip2
   deriving anyclass Applicative
 instance Promap Zip2 where promap f g (Zip2 z) = Zip2 \ a a' -> g (z (f a) (f a'))
@@ -76,7 +76,7 @@ repIso :: (forall p. Promap p => p a b -> p s t) -> Iso a b s t
 repIso p = p (Iso (\a -> a) (\b -> b))
 
 _coerce_ :: forall s t a b p. (Promap_ p, s =# a, b =# t ) => p a b -> p s t
-_coerce_ = promap_ coerce coerce
+_coerce_ = promapAs
 
 
 -- * Traversing
@@ -103,10 +103,10 @@ instance Map f => Promap (Traversing f)
 instance Remap f => Remap (Traversing f a)
   where remap f g (Traversing s) = Traversing (remap f g < s)
 instance Map_ f => Map_ (Traversing f a)
-  where map_ f (Traversing s) = Traversing (map_ f < s)
+  where mapAs (Traversing s) = Traversing (mapAs < s)
 instance Map_ f => Promap_ (Traversing f) where
-  premap_ _ = coerce
-  postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
+  premapAs = coerce
+  postmapAs (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
 instance Map f => Traversed Map (Traversing f) where
@@ -190,7 +190,7 @@ instance Traversed (Map & Comap) (Do f r) where
 newtype FK f a b = FK {runFK :: f a}
   deriving (Map,Remap,Map_) via Phantom ## FK f a
 
-{-instance Apply f => Scale0al (,) (FK f a) where monoidal (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
+{-instance Apply f => Monoidal (,) (FK f a) where monoidal (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
 {-instance Apply f => Apply (FK f a) where ap (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
 {-instance (Pure f, Nil a) => Pure (FK f a) where pure !_ = FK (pure nil)-}
 {-instance (Applicative f, Nil a) => Applicative (FK f a)-}

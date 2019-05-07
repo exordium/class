@@ -18,7 +18,7 @@ instance Reifies s (Reified Monoid a) => P.Monoid (Instance Monoid a s) where
   mappend = (P.<>)
 
 {-sum :: [Int] -> Int-}
-sum :: Num a => [a] -> a
+sum :: P.Num a => [a] -> a
 sum xs = usingInst add do P.fold (P.map coerce xs)
 
 ex1 :: P.Num r => r
@@ -27,17 +27,17 @@ ex1 = using (Instance @Monoid) mul do 3 P.<> 13
 ex1' :: P.Num r => r
 ex1' = usingInst mul do 3 P.<> 13
 
-ex2 :: Int
-ex2 = usingInst Monoid{op = (P.+), nil = 0} do q 3 where
-  q :: (s ?: Monoid) Int => Int -> (s !: Monoid) Int
-  q i = Instance i P.<> 10
+--ex2 :: Int
+--ex2 = usingInst Monoid{op = (P.+), nil = 0} do q 3 where
+  --q :: (s ?: Monoid) Int => Int -> (s !: Monoid) Int
+  --q i = Instance i P.<> 10
 
-ex2' :: Int
-ex2' = q 3
-  `withInst` Monoid{op = (P.+), nil = 0}
-   where
-    q :: (s ?: Monoid) Int => Int -> (s !: Monoid) Int
-    q i = Instance i P.<> 10
+--ex2' :: Int
+--ex2' = q 3
+  --`withInst` Monoid{op = (P.+), nil = 0}
+   --where
+    --q :: (s ?: Monoid) Int => Int -> (s !: Monoid) Int
+    --q i = Instance i P.<> 10
 
 
 add :: P.Num a => Reified Monoid a

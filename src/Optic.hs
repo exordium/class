@@ -3,7 +3,6 @@
 {-# language MagicHash #-}
 module Optic where
 import Types
-import Impl hiding ((!))
 import Fun
 import Control
 import Type.E
@@ -53,7 +52,7 @@ zipOf g reduce fs = g grate0 `runGrate` \get -> reduce (map get fs)
 
 newtype Zip2 a b = Zip2 {runZip2 :: a -> a -> b}
   deriving (Map_,Remap,Map) via (Promap ### Zip2) a
-  deriving (Monoidal (,)) via Apply ## Zip2 a -- TODO: roll into profunctor apply
+  deriving (Scale0al (,)) via Apply ## Zip2 a -- TODO: roll into profunctor apply
   deriving Promap_ via Representational2 ### Zip2
   deriving anyclass Applicative
 instance Promap Zip2 where promap f g (Zip2 z) = Zip2 \ a a' -> g (z (f a) (f a'))
@@ -110,8 +109,8 @@ instance Map_ f => Promap_ (Traversing f) where
   postmap_ _ (Traversing afb) = Traversing $ afb > map_ coerce
 instance  Distribute f => Closed (Traversing f) where
   distributed (Traversing afb) = Traversing (collect afb)
-instance Map f => TraversedC Map (Traversing f) where
-  traversalC afbsft (Traversing afb) = Traversing (afbsft afb)
+instance Map f => Traversed Map (Traversing f) where
+  traversal afbsft (Traversing afb) = Traversing (afbsft afb)
 
 -- * PRISM
 
@@ -128,7 +127,7 @@ data Prism a b s t = Prism (s -> E t a) (b -> t)
 _Prism_ :: (Prism a b a b -> Prism a b s t) -> ((s -> E t a) -> (b -> t) -> r) -> r
 _Prism_ l k = case l (Prism R \ x -> x) of Prism h g -> k h g
 
--- TODO: add gelisam's case matcher
+-- TODO: op gelisam's case matcher
 match :: (Prism a b a b -> Prism a b s t) -> (t -> r) -> (a -> r) -> s -> r
 match l kt ka = _Prism_ l (\pat _ -> \s -> case pat s of {L t -> kt t; R a -> ka a})
 
@@ -159,8 +158,8 @@ _View_ :: Promap_ p => p (View n a b) (View m s t) -> p (a -> n) (s -> m)
 _View_ = promap_ View runView
 
 instance Promap (View r) where promap f g (View an) = View \ s -> an (f s)
-instance TraversedC (Map & Comap) (View m) where
-  traversalC akmskm (View am) = View (unK < akmskm (K < am))
+instance Traversed (Map & Comap) (View m) where
+  traversal akmskm (View am) = View (unK < akmskm (K < am))
 
 newtype Review (a :: *) b = Review {runReview :: b}
   deriving (Prismed,Promap) via From ### Review
@@ -185,25 +184,25 @@ doWith l afx = case l < Do $ FK < afx of Do sfkx -> sfkx > \case FK fx -> fx
 doFor :: Map f => (Do (FK f x) x a b -> Do (FK f x) x s t) -> s -> (a -> f x) -> f x
 doFor l s = doWith l .$ s
 
-instance TraversedC (Map & Comap) (Do f r) where
-  traversalC afbsft (Do afr) = Do (unK < (afbsft (K < afr)))
+instance Traversed (Map & Comap) (Do f r) where
+  traversal afbsft (Do afr) = Do (unK < (afbsft (K < afr)))
 
 newtype FK f a b = FK {runFK :: f a}
   deriving (Map,Remap,Map_) via Phantom ## FK f a
 
-{-instance Apply f => Monoidal (,) (FK f a) where monoidal (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
+{-instance Apply f => Scale0al (,) (FK f a) where monoidal (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
 {-instance Apply f => Apply (FK f a) where ap (FK fa) (FK fb) = FK (liftA2 (\_ b -> b) fa fb)-}
 {-instance (Pure f, Nil a) => Pure (FK f a) where pure !_ = FK (pure nil)-}
 {-instance (Applicative f, Nil a) => Applicative (FK f a)-}
 instance (Pure f, Nil a) => Nil (FK f a r) where nil = FK (pure nil)
-instance (Apply f, Op a) => Op (FK f a r) where FK f . FK g = FK (f |$(.)$| g)
-instance (Applicative f, Monoid a) => Monoid (FK f a r)
+instance (Apply f, Op a) => Op (FK f a r) where FK f `op` FK g = FK (f |$ op $| g)
+instance (Applicative f, Scale0 a) => Scale0 (FK f a r)
 
 
 {-newtype WrapF f a = WrapF {unwrapF :: f a}-}
 {-instance (Pure f, Zero a) => Zero (WrapF f a) where zero = WrapF (pure zero)-}
-{-instance (Apply f, Add a) => Add (WrapF f a) where add (WrapF a) (WrapF b) = WrapF (add `map` a `ap`     b)-}
-{-instance (Applicative f, Add0 a) => Add0 (WrapF f a)-}
+{-instance (Apply f, Op a) => Op (WrapF f a) where op (WrapF a) (WrapF b) = WrapF (op `map` a `ap`     b)-}
+{-instance (Applicative f, Scale0 a) => Scale0 (WrapF f a)-}
 
 newtype Update b s t = Update {runUpdate :: b -> s -> t}
   deriving (Map,Remap) via (Promap ### Update b) s
@@ -213,8 +212,8 @@ instance Promap (Update b) where promap f g (Update bst) = Update \ b -> f > bst
 instance Closed (Update b) where closed (Update bst) = Update \ b xs x -> bst b (xs x)
 instance Prismed (Update b) where
   prism seta bt (Update bab) = Update \ b -> seta > (id ||| (bab b > bt))
-instance TraversedC Wrap (Update b) where
-  traversalC afbsft (Update bab) = Update \ b -> unI < afbsft (I < bab b)
+instance Traversed Wrap (Update b) where
+  traversal afbsft (Update bab) = Update \ b -> unI < afbsft (I < bab b)
 
 _Update_ :: Promap_ p => Update x a b `p` Update x s t -> (x -> a -> b) `p` (x -> s -> t)
 _Update_ = promap_ Update runUpdate

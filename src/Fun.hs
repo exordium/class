@@ -5,124 +5,138 @@
 {-# language FunctionalDependencies #-}
 module Fun (module Fun, module X) where
 {-import Promap-}
-import qualified Prelude as P
-import Prelude as X (Bool(..),IO,print,Char,Double,Int,Maybe(..),maybe,Integer,Integral(..),Num(fromInteger))
-import Data.Maybe (fromMaybe)
-import Named as X (WithParam,(:!),(:?),arg)
-import Named.Internal as X (Param(..),Decide)
-import qualified Named
-import qualified Named.Internal as Named
-import Church
-import Type.E
-import GHC.Prim
+import GHC.Types as X (Bool(..),IO,Char)
+import GHC.Prim as X (TYPE)
+import GHC.Base as X (id)
+import GHC.Stack as X (HasCallStack)
+import qualified GHC.Prim as GHC
+import qualified GHC.Base as GHC
 import qualified Unsafe.Coerce as GHC
 import qualified Data.Coerce as GHC
+import Fun.Named as X
+
+import Church
 
 fix :: (a -> a) -> a
 fix f = f (fix f)
 
-
+{-# INLINE (>) #-}
 (>) :: (a -> x) -> (x -> b) -> a -> b
-f > g = \a -> g (f a); {-# INLINE (>) #-}
+f > g = \a -> g (f a)
 
+infixr 9 <
+{-# INLINE (<) #-}
 (<) :: (x -> b) -> (a -> x) -> a -> b
-f < g = \a -> f (g a); {-# INLINE (<) #-}
-infixr <
+(<) = (GHC..)
 
-(?) :: forall a r. Church a => a -> ChurchRep a r
--- | 
-(?) = churchEncode @a @r; {-# INLINE (?) #-}
 infixl ?
+{-# INLINE (?) #-}
+(?) :: forall a r. Church a => a -> ChurchRep a r
+(?) = churchEncode @a @r
 
-pattern Arg' :: Maybe a -> Named.NamedF Maybe a name
-pattern Arg' b = Named.ArgF b
-
-arg' :: Named.Name name -> Named.NamedF Maybe a name -> Maybe a
-arg' = Named.argF
-
-{-(^) :: -}
+{-# inline ($:) #-}
 f $: (a,b) = f a b
-f .$ a = (`f` a)
-f $ a = f a
-($!) f !a = f a
-infixl 1 $, $!, $$, $., &
+{-# inline (.$) #-}
+(.$) :: (a -> b -> c) -> b -> a -> c
+(f .$ b) a = f a b
 
+-- | Application operator.  This operator is redundant, since ordinary
+-- application @(f x)@ means the same as @(f '$' x)@. However, '$' has
+-- low, binding precedence, so it sometimes allows
+-- parentheses to be omitted; for example:
+--
+-- > f < g < h $ x
+-- >   $ modifying % some > long > expression
+-- >   $ y
+-- > = f (g (h h)) (expression (long (some modifying))) y
+--
+--
+--
+-- It is also useful in higher-order situations, such as @'map' ('$' 0) xs@,
+-- or @'zipWith' ('$') fs xs@.
+infixl 1 $, $!
+{-# inline ($) #-}; {-# inline ($!) #-}
+($),($!):: forall r a (b :: TYPE r). (a -> b) -> a -> b
+($) = (GHC.$)
+-- | Strict (call-by-value) application operator. It takes a function and an
+-- argument, evaluates the argument to weak head normal form (WHNF), then calls
+-- the function with that value.
+($!) = (GHC.$!)
+
+
+{-# inline (!) #-}
 (!) :: a -> b -> a
-(!) = P.const; {-# inline (!) #-}
-(!!) = seq; {-# INLINE (!!) #-}
+(!) = GHC.const
+{-# INLINE (!!) #-}
+(!!) :: a -> b -> a
+a !! b = GHC.seq b a
 
-a & f = f a
-(!&) !a f = f a
-
--- | 
--- prop> downcast < upcast = id
-class super ~>~ sub where
-  upcast :: sub -> super
-  downcast :: super -> sub
-instance a ~>~ a where {upcast a = a; downcast a = a}
-instance Integer ~>~ Int where {upcast = toInteger; downcast = fromInteger}
-{-instance Integral a => Int ~>~ Integer where {upcast = toInteger; downcast = Just < fromInteger}-}
-
--- | 'downcast' an argument before feeding it to a function. Useful for literal overloading in the absence of 'Num' magic
-(%) :: forall super sub r. super ~>~ sub => (sub -> r) -> super -> r
-(%) = (<downcast)
-{-# INLINE (%) #-}
+infixl 1 %, !%
+{-# inline (%) #-}; {-# inline (!%) #-}
+(%), (!%) :: a -> (a -> b) -> b
+a % f = f a
+(!%) !a f = f a
 
 
+-- | A special case of 'error'.
+-- It is expected that compilers will recognize this and insert error
+-- messages which are more appropriate to the context in which 'undefined'
+-- appears. Useful for debugging and when you know it won't be evaluated.
+_# :: HasCallStack => a
+_# = GHC.undefined
 
--- | Supply a named parameter to a function:
+-- | The function @coerce#\#@ allows you to side-step the typechecker entirely. That
+--         is, it allows you to coerce any type into any other type. If you use this function,
+--         you had better get it right, otherwise segmentation faults await. It is generally
+--         used when you want to write a program that you know is well-typed, but where Haskell\'s
+--         type system is not expressive enough to prove that it is well typed.
 -- 
--- > foob a b (arg #x -> x) = ...
--- > foob
--- >    ! a + b
--- >    ! reverse "Hello"
--- >    !! #x(7)
--- >    !! #y(42)
--- >    !! defaults
-
-($$) :: WithParam p fn fn' => fn -> Param p -> fn'
-($$) = (Named.!)
-
--- | Pass a named argument positionally
-($.) :: Named.InjValue f => (Named.NamedF f a name -> b) -> a -> b
-($.) f = f < Named.ArgF < Named.injValue
-{-(!.) f a = f (Named.ArgF (Named.injValue a))-}
-
-{-foo :: Int -> "bar" :! Int -> "foo" :? Char -> IO ()-}
-foo i (arg #bar -> b) (arg' #foo -> f) = do
-  print i
-  print b
-  print $ fromMaybe "" f
-
-ff = (P.* (2::Int)) %(10::Integer)  
-
-__ = P.undefined
-
-{-(|||) :: (a -> r) -> (b -> r) -> E a b -> r-}
-{-f ||| g = \case {L a -> f a; R b -> g b}-}
-{-(+++) :: (x -> a) -> (y -> b) -> E x y -> E a b-}
-{-f +++ g = (L < f) ||| (R < g)-}
-
-{-(&&&) :: (x -> a) -> (x -> b) -> x -> (a,b)-}
-{-f &&& g = \x -> (f x, g x)-}
-{-(***) :: (x -> a) -> (y -> b) -> (x,y) -> (a,b)-}
-{-f *** g = \(x,y) -> (f x, g y)-}
-
-id :: a -> a
-id a = a
-
+--         The following uses of @coerce#\#@ are supposed to work (i.e. not lead to
+--         spurious compile-time or run-time crashes):
+-- 
+--          * Casting any lifted type to @Any@
+-- 
+--          * Casting @Any@ back to the real type
+-- 
+--          * Casting an unboxed type to another unboxed type of the same size.
+--            (Casting between floating-point and integral types does not work.
+--            See the @GHC.Float@ module for functions to do work.)
+-- 
+--          * Casting between two types that have the same runtime representation.  One case is when
+--            the two types differ only in \"phantom\" type parameters, for example
+--            @Ptr Int@ to @Ptr Float@, or @[Int]@ to @[Float]@ when the list is
+--            known to be empty.  Also, a @newtype@ of a type @T@ has the same representation
+--            at runtime as @T@.
+-- 
+--         Other uses of @coerce#\#@ are undefined.  In particular, you should not use
+--         @coerce#\#@ to cast a T to an algebraic data type D, unless T is also
+--         an algebraic data type.  For example, do not cast @Int->Int@ to @Bool@, even if
+--         you later cast that @Bool@ back to @Int->Int@ before applying it.  The reasons
+--         have to do with GHC\'s internal representation details (for the cognoscenti, data values
+--         can be entered but function closures cannot).  If you want a safe type to cast things
+--         to, use @Any@, which is not an algebraic data type.
+{-# inline coerce# #-}
 coerce# :: a -> b
 coerce# = GHC.unsafeCoerce
 
 type (=#) = GHC.Coercible
-coerce :: b =# a => a -> b
-coerce = GHC.coerce; {-# INLINE coerce #-}
-(#) :: forall a b. (a =# b) => (a -> b) -> a -> b
-(#) _ = GHC.coerce @a @b
+-- | The function @coerce@ allows you to safely convert between values of
+-- types that have the same representation with no run-time overhead. In the
+-- simplest case you can use it instead of a newtype constructor, to go from
+-- the newtype\'s concrete type to the abstract type. But it also works in
+-- more complicated settings, e.g. converting a list of newtypes to a list of
+-- concrete types.
+-- Useful with @-XTypeApplications@. eg:
 --
+-- > coerce @Int :: Int =# a => a -> Int
+{-# inline coerce #-}
+coerce :: b =# a => a -> b
+coerce = GHC.coerce
+
 -- | Representational Equality on functors
 class    (forall a. f a =# g a) => f #=# g
 instance (forall a. f a =# g a) => f #=# g
 coerce1 :: forall g f a. f #=# g => f a -> g a
 coerce1 = GHC.coerce
 
+f $# a = f (coerce a)

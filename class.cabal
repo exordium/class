@@ -1,4 +1,4 @@
-cabal-version: 2.2
+cabal-version: 2.4
 name: class
 homepage: https://github.com/exordium/class#readme
 version: 0.1.0.0
@@ -18,16 +18,19 @@ source-repository head
 common x
   default-language: Haskell2010
   default-extensions: DataKinds,NoImplicitPrelude,ViewPatterns,PatternSynonyms,RankNTypes,BlockArguments, KindSignatures, PolyKinds, QuantifiedConstraints, GADTs, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, TupleSections, LambdaCase, ConstraintKinds, TypeFamilies, AllowAmbiguousTypes, TypeOperators, OverloadedLabels, ScopedTypeVariables, TypeApplications, BangPatterns, GeneralizedNewtypeDeriving, DeriveAnyClass, DerivingStrategies, DerivingVia, StandaloneDeriving, FunctionalDependencies, DefaultSignatures, MultiWayIf, UndecidableInstances, TypeFamilyDependencies, EmptyCase
+  default-extensions: NumDecimals, NegativeLiterals, HexFloatLiterals, BinaryLiterals, NumericUnderscores, OverloadedStrings
 
 library
   import: x
-  exposed-modules: Data, Control, Fun, Functor, Trans
+  exposed-modules: Fun, Fun.Named
+                 ,Data, Control, Functor, Trans
                  , Types, Type.I, Type.O, Type.K, Type.E, Type.X, Type.Bazaar
                  , Reflect , Reflect.Monoid, Reflect.Mod
                  , Functor.Unsafe
                  , Optic
+                 , Types.Numeric
+                 , FFI.Types
   hs-source-dirs: src
-  build-depends: base, template-haskell, named, impl, ghc-prim, church
+  build-depends: base, template-haskell, named, ghc-prim, church
                , containers
                , bytestring
-               , finite-typelits

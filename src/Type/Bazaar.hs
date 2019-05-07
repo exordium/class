@@ -23,6 +23,11 @@ sell :: forall c a b. a -> Bazaar c a b b
 sell a = Bazaar \ f -> f a
 buy :: forall c a b. c (K a) => Bazaar c a b b -> a
 buy (Bazaar f) = unK (f K)
+
+deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
+deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
+instance Map (Baz c t b) where
+  map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 --
 -- * @O@
 newtype O (f :: * -> *) (g :: * -> *) a = O {unO :: f (g a)}

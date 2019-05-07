@@ -93,6 +93,12 @@ fold f = traverses @(Applicative & Comap) (f > K) > unK
 
 fold1 :: (Fold1 t, Scale0 m) => (a -> m) -> t a -> m
 fold1 f = traverses @(Apply & Comap) (f > K) > unK
+
+fold' :: (Traverses Applicative t, Op m) => (a -> m) -> t a -> E (t x) m
+fold' f = swap < traverses @Applicative (L < f)
+
+empty' :: Traverses Applicative t => t a -> Bool
+empty' ta = case fold' (()!) ta of {L{} -> True; R{} -> False}
  
 {-for_ :: forall c t a m. (Fold c t, c m) => t a -> (a -> m) -> m-}
 {-for_ s am = foldMap @c am s-}
@@ -104,10 +110,10 @@ fold1 f = traverses @(Apply & Comap) (f > K) > unK
 extract_traverse :: (Extract t, Constant f) => (a -> f b) -> t a -> f (t b)
 extract_traverse afb (extract -> a) = comap extract (afb a)
 
-extract0 :: (Traverses (Pure & Comap) f, Nil m) => (a -> m) -> f a -> m
-extract0 f = traverses @(Pure & Comap) (f > K) > unK
+extract0 :: (Traverses Pure f, Nil m) => (a -> m) -> f a -> m
+extract0 f = traverses @Pure (f > K) > unK
 
-(@?) :: (Traverses (Pure & Comap) t, Nil a) => t a -> a -> a
+(@?) :: (Traverses Pure t, Nil a) => t a -> a -> a
 (@?) t a = usingInst (Reified_Nil a) do extract0 Instance t
 
 newtype instance Reified Nil a = Reified_Nil a
@@ -204,6 +210,15 @@ instance (Applicative f, Scale0 a) => Scale0 ((Applicative ## f) a)
 instance (c ==> Distribute, Map f) => Traverses c (Map ## f) where
   traverses afb (Map ta) = map_ Map < distribute @_ @f $ map @f afb ta
 -- | distribute < imap (imap < iab) = imap (imap < flip iab) < distribute
+
+
+class Distrib c t where distrib :: c f => f (t a) -> t (f a)
+class Costrong w where costrong :: Pure f => w (f a) -> f (w a)
+instance Costrong (E x) where
+  costrong = \case
+     L x -> pure (L x)
+     R fa -> remap (\(R a) -> a) R fa
+
 class Monad t => Distribute t where
   distribute :: Map f => f (t a) -> t (f a)
   distribute = collect \ x -> x
@@ -544,6 +559,15 @@ deriving via ((Bimap ### E) a) instance Map (E a)
 deriving via ((Bimap ### E) a) instance Remap (E a)
 deriving via Bimap ### E instance LMap E
 instance Pure (E x)   where pure = R
+deriving via Apply ## (E x) instance Op x => Monoidal (,) (E x)
+instance Op x => Apply (E x) where
+  ap (R f) (R a) = R (f a)
+  ap (L x) (R _) = L x
+  ap (R _) (L y) = L y
+  ap (L x) (L y) = L (y . x)
+instance Op x => Applicative (E x)
+
+
 instance c ==> Pure => Traverses c (E x) where
   traverses afb = \case {L x -> pure (L x); R a -> remap (\case R a -> a) R (afb a)}
 

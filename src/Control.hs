@@ -165,6 +165,10 @@ class Promap p => Prismed p where
   _R = prism (L < L ||| R)  R
   _L :: p a b -> p (E a y) (E b y)
   _L = promap swap swap < _R
+  --prismed :: (Pure t, Traverses Pure t) => p a b -> p (t a) (t b)
+  --prismed = prism (swap < traverses @Pure L) pure
+
+--Pure f => f a -> E (f b) a
 
 class Prismed p => From p where
   {-# minimal from | precoerce #-}
@@ -208,11 +212,6 @@ instance Compose (->) where compose = (>)
 instance Identity (->) where identity = id
 instance Category (->)
 instance Arr (->) where arr = id
-
-deriving via (Representational ## Baz c t b) instance Map_ (Baz c t b)
-deriving via (Map ## Baz c t b) instance Remap (Baz c t b)
-instance Map (Baz c t b) where
-  map xy (Baz xfbft) = Baz \ yfb -> xfbft \ x -> yfb (xy x)
 
 {-instance {-# Overlappable #-} Promap p => Promap_ p where-}
   {-promap_ _ _ !p = promap coerce coerce p-}

@@ -125,19 +125,19 @@ class Promap p => Traversed c p | p -> c where
                     {-=> (forall f. c f => (a -> f b) -> s -> f t)-}
                     {--> p a b -> p s t-}
   {-traversal f pab = promap (\s -> Baz (\afb -> f afb s)) (sold @c) (traversed @c pab)-}
-  mapping :: c ~ Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
+  mapping :: c ==> Wrap => ((a -> b) -> s -> t) -> p a b -> p s t
   mapping abst = traversal \ afb -> abst (afb > unwrap) > pure
-  mapped :: c ~ Wrap => Map f => p a b -> p (f a) (f b)
+  mapped :: c ==> Wrap => Map f => p a b -> p (f a) (f b)
   mapped = mapping map
 
-  lens :: c ~ Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
+  lens :: c ==> Map => (s -> a) -> (s -> b -> t) -> p a b -> p s t
   lens get set = traversal \ afb s -> set s `map` afb (get s)
-  _2 :: c ~ Map => p a b -> p (x,a) (x,b)
+  _2 :: c ==> Map => p a b -> p (x,a) (x,b)
   _2 = traversed
-  _1 :: c ~ Map => p a b -> p (a,x) (b,x)
+  _1 :: c ==> Map => p a b -> p (a,x) (b,x)
   _1 p = let swap (a,b) = (b,a) in promap swap swap (_2 p)
 
-  {-folding :: c ~ (Applicative & Comap)-}
+  {-folding :: c ==> (Applicative & Comap)-}
           {-=> (forall m. Monoid m => (a -> m) -> s -> m)-}
           {--> p a b -> p s t-}
   {-folding amsm p = traversal (\afb -> amsm (\a ->  afb a)) p-}

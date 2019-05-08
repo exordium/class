@@ -29,7 +29,7 @@ library
                  , Functor.Unsafe
                  , Optic
                  , Types.Numeric
-                 , FFI.Types
+                 , FFI, FFI.Types, FFI.Error
   hs-source-dirs: src
   build-depends: base, template-haskell, named, ghc-prim, church
                , containers

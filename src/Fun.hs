@@ -48,7 +48,7 @@ f $: (a,b) = f a b
 -- > f < g < h $ x
 -- >   $ modifying % some > long > expression
 -- >   $ y
--- > = f (g (h h)) (expression (long (some modifying))) y
+-- > = f (g (h x)) (expression (long (some modifying))) y
 --
 --
 --
@@ -67,11 +67,11 @@ infixl 1 $, $!
 {-# inline (!) #-}
 (!) :: a -> b -> a
 (!) = GHC.const
-{-# INLINE (!!) #-}
+{-# inline (!!) #-}
 (!!) :: a -> b -> a
 a !! b = GHC.seq b a
 
-infixl 1 %, !%
+infixl 2 %, !%
 {-# inline (%) #-}; {-# inline (!%) #-}
 (%), (!%) :: a -> (a -> b) -> b
 a % f = f a

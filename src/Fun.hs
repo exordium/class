@@ -29,6 +29,11 @@ infixr 9 <
 (<) :: (x -> b) -> (a -> x) -> a -> b
 (<) = (GHC..)
 
+infixr 9 <<
+{-# inline (<<) #-}
+(<<) :: (x -> c) -> (a -> b -> x) -> a -> b -> c
+f << g = \a b -> f (g a b)
+
 infixl ?
 {-# INLINE (?) #-}
 (?) :: forall a r. Church a => a -> ChurchRep a r

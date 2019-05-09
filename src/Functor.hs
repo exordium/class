@@ -51,7 +51,7 @@ map_traverse f = pure < map (unwrap < f)
 
 -- | Traverse over a container with a functor 
  {-forall cc. (cc ==> c) => Traverses cc t, c ==> Map_, -}
-class Traverses c t where
+class (forall cc. (cc ==> c) => Traverses cc t, Map t) => Traverses c t where
   traverses :: c f => (a -> f b) -> t a -> f (t b)
   --traverses afb ta = sequenceC @c (map afb ta)
   sequenceC :: c f => t (f a) -> f (t a)

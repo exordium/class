@@ -22,15 +22,21 @@ common x
 
 library
   import: x
-  exposed-modules: Fun, Fun.Named
-                 ,Data, Control, Functor, Trans
-                 , Types, Type.I, Type.O, Type.K, Type.E, Type.X, Type.Bazaar
+  exposed-modules: Fun, Fun.Named, Fun.Cast
+                 ,Data
+                 ,Control, Control.Folded
+                 --, Cotnrol.Folded.Internal
+                 , Functor
+                 , Types, Type.I, Type.O, Type.K, Type.E, Type.X
+                 ,Type.Bazaar
                  , Reflect , Reflect.Monoid, Reflect.Mod
                  , Functor.Unsafe
-                 , Optic
+                 --, Optic
                  , Types.Numeric
                  , FFI, FFI.Types, FFI.Error
   hs-source-dirs: src
   build-depends: base, template-haskell, named, ghc-prim, church
                , containers
                , bytestring
+               , integer-gmp
+  c-sources: ./cbits/foo.c

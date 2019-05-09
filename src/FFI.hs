@@ -1,12 +1,35 @@
-module FFI where
+{-# language MagicHash #-}
+module FFI 
+  (
+  -- * Pointers
+   Ptr(..) ,alignPtr
+  -- ** Function Pointers
+  ,FunPtr(..), freeHaskellFunPtr
+  -- ** Foreign Pointers
+  ,ForeignPtr(..)
+  -- *** Foreign Pointer Operations
+  ,newForeignPtr,addForeignPtrFinalizer,finalizeForeignPtr
+  ,withForeignPtr,touchForeignPtr
+  -- *** Allocating Managed Memory
+  ,mallocForeignPtr,mallocForeignPtrBytes,mallocForeignPtrArray,mallocForeignPtrArray0
+
+
+  ) where
 import Fun
+import Fun.Cast
 import Foreign.C
-import Foreign.Ptr
-import qualified Foreign.ForeignPtr.Safe as GHC
+import Foreign.ForeignPtr hiding (newForeignPtr,addForeignPtrFinalizer)
+import qualified Foreign.ForeignPtr as GHC
 import qualified Foreign.Concurrent as GHC.Conc
 import qualified Named
 import qualified Named.Internal as Named
 import qualified Prelude as P
+import Data
+import Types.Numeric
+import Foreign.Ptr (freeHaskellFunPtr)
+import GHC.Ptr hiding (alignPtr)
+import qualified GHC.Ptr as GHC
+import qualified GHC.Prim as GHC
 
 -- = [FFI](https://www.haskell.org/onlinereport/haskell2010/haskellch8.html)
 
@@ -63,6 +86,7 @@ import qualified Prelude as P
 -- as well as values and function calls.
 --
 --
+
 
 
 -- | Turns a plain memory reference into a foreign pointer, and may associate a
@@ -134,3 +158,8 @@ addForeignPtrFinalizer p (arg'  #finalizer_ptr -> fptr)
   go _ _ _ _ = P.error
     "too many parameters to function addForeignPtrFinalizer: valid parameters\n\
     \(finalizer_ptr | finalizer_io | finalizer_env, env)"
+
+alignPtr :: Ptr a -> I64 -> Ptr a
+alignPtr addr@(Ptr a) (I64 i) = case GHC.remAddr# a i of
+  0# -> addr
+  n -> Ptr (GHC.plusAddr# a (i GHC.-# n))

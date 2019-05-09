@@ -11,6 +11,9 @@ import qualified Prelude as P hiding ((.))
 import qualified Numeric.Natural as P
 import Fun
 import qualified Data.Bits as P
+import qualified GHC.Ptr as GHC
+import qualified GHC.Prim as GHC
+import qualified GHC.ForeignPtr as GHC
 
 import Types.Numeric
 
@@ -134,6 +137,8 @@ instance Bot a => Scale0 (Join # a)
 
 instance (Top a, Bot a) => Mul (Join # a) where mul = coerce (meet @a) -- TODO: fix
 
+class Scale0 m => Act m s | s -> m where act :: m -> s -> s
+class (Neg m, Act m s) => Diff m s | s -> m where diff :: s -> s -> m
 
 class Op a where
   op :: a -> (a -> a)
@@ -141,6 +146,11 @@ class Op a where
   scale1 n = scale1# (n P.+ 1) 
 (.) :: Op a => a -> a -> a
 a . b = op b a
+
+-- | Decidable 'Nil'
+class Nil a => Nil' a where nil' :: a -> Bool
+--pattern Nil :: Nil' a => a
+--pattern Nil <- (nil' -> True) where Nil = nil
 
 class Nil a where nil :: a
 class (Op a, Nil a) => Scale0 a where
@@ -330,6 +340,7 @@ instance Num# a => Neg (Num# # a) where neg = coerce (P.negate @a)
 deriving via Neg # Num# # a instance Num# a => Prefix (Num# # a)
 deriving via Neg # Num# # a instance Num# a => Suffix (Num# # a)
 
+
 newtype instance Ord# # a = Ord# a
   deriving (Eq',Eq) via Eq# # a
 
@@ -360,6 +371,9 @@ deriving via Num# # I64 instance Nil I64
 deriving via Num# # I64 instance Scale0 I64
 deriving via Num# # I64 instance Mul I64
 deriving via Num# # I64 instance Mul1 I64
+deriving via Num# # I64 instance Neg I64
+deriving via Num# # I64 instance Prefix I64
+deriving via Num# # I64 instance Suffix I64
 deriving via Bounded# # I64 instance Eq' I64
 deriving via Bounded# # I64 instance Eq I64
 deriving via Bounded# # I64 instance Ord' I64
@@ -413,3 +427,23 @@ instance Scale0 (Endo a)
 {-instance Scale0 a => Nil (Rg # Endo a) where nil = Rg $ Endo \_ -> nil-}
 
 instance Op X where op = absurd
+
+instance Nil (GHC.Ptr a) where nil = GHC.nullPtr
+instance Act I64 (GHC.Ptr a) where act (I64 i) (GHC.Ptr p) = GHC.Ptr (GHC.plusAddr# p i)
+instance Diff I64 (GHC.Ptr a) where diff (GHC.Ptr a) (GHC.Ptr b) = I64 (GHC.minusAddr# a b)
+
+instance Nil (GHC.FunPtr a) where nil = GHC.FunPtr GHC.nullAddr#
+instance Nil' (GHC.FunPtr a) where nil' (GHC.FunPtr p) = B# (GHC.eqAddr# p GHC.nullAddr#)
+
+-- | Advances the given address by the given offset in bytes.
+--
+-- The new 'ForeignPtr' shares the finalizer of the original,
+-- equivalent from a finalization standpoint to just creating another
+-- reference to the original. That is, the finalizer will not be
+-- called before the new 'ForeignPtr' is unreachable, nor will it be
+-- called an additional time due to this call, and the finalizer will
+-- be called with the same address that it would have had this call
+-- not happened, *not* the new address. Effectively the new pointer is \"Internal\" 
+-- to the data pointed at by the original.
+instance Act I64 (GHC.ForeignPtr a) where
+  act (I64 i) (GHC.ForeignPtr p f) = GHC.ForeignPtr (GHC.plusAddr# p i) f
